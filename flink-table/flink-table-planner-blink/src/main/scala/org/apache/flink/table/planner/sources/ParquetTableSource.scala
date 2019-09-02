@@ -59,8 +59,16 @@ class ParquetTableSource(
   protected var filterPredicate: FilterPredicate = _
 
   override def projectFields(fields: Array[Int]): ParquetTableSource = {
-    new ParquetTableSource(
-      schema, filePath, enumerateNestedFiles, numTimes, sourceName, uniqueKeySet, fields)
+    val newSchema = if(fields.nonEmpty){
+      schema
+    }else{
+      TableSchema.builder().fields(Array(schema.getFieldNames.head),
+        Array(schema.getFieldDataTypes.head)).build()
+    }
+    val newTableSource = new ParquetTableSource(
+      newSchema, filePath, enumerateNestedFiles, numTimes, sourceName, uniqueKeySet, fields)
+    newTableSource.cachedStats = cachedStats
+    newTableSource
   }
 
   private def selectFieldDataTypes(): Array[DataType] = {
