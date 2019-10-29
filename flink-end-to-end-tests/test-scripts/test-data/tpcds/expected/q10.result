@@ -1,0 +1,6 @@
+F,D,College,1,5000,1,Low Risk,1,2,1,5,1,4,1
+F,M,Unknown,1,5000,1,Low Risk,1,1,1,0,1,0,1
+F,U,Primary,1,3000,1,High Risk,1,2,1,1,1,5,1
+F,U,Secondary,1,9500,1,High Risk,1,5,1,3,1,3,1
+M,M,Secondary,1,7000,1,Low Risk,1,0,1,0,1,1,1
+M,S,Primary,1,9000,1,Good,1,3,1,6,1,6,1

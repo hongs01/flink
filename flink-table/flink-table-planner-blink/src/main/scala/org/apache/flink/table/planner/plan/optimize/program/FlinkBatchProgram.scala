@@ -34,6 +34,7 @@ object FlinkBatchProgram {
   val DECORRELATE = "decorrelate"
   val DEFAULT_REWRITE = "default_rewrite"
   val PREDICATE_PUSHDOWN = "predicate_pushdown"
+  val ELIMINATE_CROSS_JOIN = "eliminate_cross_join"
   val JOIN_REORDER = "join_reorder"
   val JOIN_REWRITE = "join_rewrite"
   val WINDOW = "window"
@@ -135,6 +136,19 @@ object FlinkBatchProgram {
             .add(FlinkBatchRuleSets.PRUNE_EMPTY_RULES)
             .build(), "prune empty after predicate push down")
         .build())
+
+    // eliminate cross join
+    if (config.getBoolean(OptimizerConfigOptions.TABLE_OPTIMIZER_ELIMINATE_CROSS_JOIN_ENABLED)) {
+      chainedProgram.addLast(
+        ELIMINATE_CROSS_JOIN,
+        FlinkHepRuleSetProgramBuilder.newBuilder
+          .setHepRulesExecutionType(HEP_RULES_EXECUTION_TYPE.RULE_SEQUENCE)
+          .setHepMatchOrder(HepMatchOrder.BOTTOM_UP)
+          .add(FlinkBatchRuleSets.BATCH_EXEC_ELIMINATE_CROSS_JOIN)
+          .build()
+      )
+    }
+
 
     // join reorder
     if (config.getBoolean(OptimizerConfigOptions.TABLE_OPTIMIZER_JOIN_REORDER_ENABLED)) {

@@ -237,6 +237,11 @@ object FlinkBatchRuleSets {
     LoptOptimizeJoinRule.INSTANCE
   )
 
+  val BATCH_EXEC_ELIMINATE_CROSS_JOIN: RuleSet = RuleSets.ofList(
+    JoinToMultiJoinRule.INSTANCE,
+    EliminateCrossJoinRule.INSTANCE
+  )
+
   /**
     * RuleSet to do logical optimize.
     * This RuleSet is a sub-set of [[LOGICAL_OPT_RULES]].
