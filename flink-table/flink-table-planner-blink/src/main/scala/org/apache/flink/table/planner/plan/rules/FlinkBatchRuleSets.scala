@@ -22,7 +22,6 @@ import org.apache.flink.table.planner.plan.nodes.logical._
 import org.apache.flink.table.planner.plan.rules.logical._
 import org.apache.flink.table.planner.plan.rules.physical.FlinkExpandConversionRule
 import org.apache.flink.table.planner.plan.rules.physical.batch._
-
 import org.apache.calcite.rel.core.RelFactories
 import org.apache.calcite.rel.logical.{LogicalIntersect, LogicalMinus, LogicalUnion}
 import org.apache.calcite.rel.rules._
@@ -238,7 +237,6 @@ object FlinkBatchRuleSets {
   )
 
   val BATCH_EXEC_ELIMINATE_CROSS_JOIN: RuleSet = RuleSets.ofList(
-    JoinToMultiJoinRule.INSTANCE,
     EliminateCrossJoinRule.INSTANCE
   )
 

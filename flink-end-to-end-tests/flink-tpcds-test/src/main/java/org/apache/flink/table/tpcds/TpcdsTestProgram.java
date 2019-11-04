@@ -75,7 +75,7 @@ public class TpcdsTestProgram {
 		String sinkTablePath = params.getRequired("sinkTablePath");
 
 		//Execute TPC-DS queries
-		for (int i = 18; i < maxQueryId && i != badCaseIndex; i++) {
+		for (int i = 39; i < maxQueryId && i != badCaseIndex; i++) {
 			// execute custom queries
 			TableEnvironment tableEnvironment = prepareTableEnv(sourceTablePath);
 			String queryName = "q" + i + ".sql";

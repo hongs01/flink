@@ -141,14 +141,21 @@ object FlinkBatchProgram {
     if (config.getBoolean(OptimizerConfigOptions.TABLE_OPTIMIZER_ELIMINATE_CROSS_JOIN_ENABLED)) {
       chainedProgram.addLast(
         ELIMINATE_CROSS_JOIN,
-        FlinkHepRuleSetProgramBuilder.newBuilder
-          .setHepRulesExecutionType(HEP_RULES_EXECUTION_TYPE.RULE_SEQUENCE)
-          .setHepMatchOrder(HepMatchOrder.BOTTOM_UP)
-          .add(FlinkBatchRuleSets.BATCH_EXEC_ELIMINATE_CROSS_JOIN)
-          .build()
-      )
+        FlinkGroupProgramBuilder.newBuilder[BatchOptimizeContext]
+          .addProgram(
+            FlinkHepRuleSetProgramBuilder.newBuilder
+              .setHepRulesExecutionType(HEP_RULES_EXECUTION_TYPE.RULE_COLLECTION)
+              .setHepMatchOrder(HepMatchOrder.BOTTOM_UP)
+              .add(FlinkBatchRuleSets.JOIN_REORDER_PREPARE_RULES)
+              .build(), "prepare join reorder")
+          .addProgram(
+            FlinkHepRuleSetProgramBuilder.newBuilder
+              .setHepRulesExecutionType(HEP_RULES_EXECUTION_TYPE.RULE_SEQUENCE)
+              .setHepMatchOrder(HepMatchOrder.BOTTOM_UP)
+              .add(FlinkBatchRuleSets.BATCH_EXEC_ELIMINATE_CROSS_JOIN)
+              .build(), "eliminate cross join")
+          .build())
     }
-
 
     // join reorder
     if (config.getBoolean(OptimizerConfigOptions.TABLE_OPTIMIZER_JOIN_REORDER_ENABLED)) {
