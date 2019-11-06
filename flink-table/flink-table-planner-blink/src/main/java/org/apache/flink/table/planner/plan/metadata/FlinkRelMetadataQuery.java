@@ -43,6 +43,7 @@ public class FlinkRelMetadataQuery extends RelMetadataQuery {
 	private FlinkMetadata.UniqueGroups.Handler uniqueGroupsHandler;
 	private FlinkMetadata.FlinkDistribution.Handler distributionHandler;
 	private FlinkMetadata.ModifiedMonotonicity.Handler modifiedMonotonicityHandler;
+	private FlinkMetadata.FilteredPercentage.Handler filteredPercentageHandler;
 
 	/**
 	 * Returns an instance of FlinkRelMetadataQuery. It ensures that cycles do not
@@ -82,6 +83,7 @@ public class FlinkRelMetadataQuery extends RelMetadataQuery {
 		this.uniqueGroupsHandler = PROTOTYPE.uniqueGroupsHandler;
 		this.distributionHandler = PROTOTYPE.distributionHandler;
 		this.modifiedMonotonicityHandler = PROTOTYPE.modifiedMonotonicityHandler;
+		this.filteredPercentageHandler = PROTOTYPE.filteredPercentageHandler;
 	}
 
 	/**
@@ -104,6 +106,8 @@ public class FlinkRelMetadataQuery extends RelMetadataQuery {
 				RelMetadataQuery.initialHandler(FlinkMetadata.FlinkDistribution.Handler.class);
 		this.modifiedMonotonicityHandler =
 				RelMetadataQuery.initialHandler(FlinkMetadata.ModifiedMonotonicity.Handler.class);
+		this.filteredPercentageHandler =
+				RelMetadataQuery.initialHandler(FlinkMetadata.FilteredPercentage.Handler.class);
 	}
 
 	/**
@@ -243,6 +247,16 @@ public class FlinkRelMetadataQuery extends RelMetadataQuery {
 			} catch (JaninoRelMetadataProvider.NoHandler e) {
 				modifiedMonotonicityHandler =
 						revise(e.relClass, FlinkMetadata.ModifiedMonotonicity.DEF);
+			}
+		}
+	}
+
+	public Double getFilteredPercentage(RelNode rel) {
+		for (; ; ) {
+			try {
+				return filteredPercentageHandler.getFilteredPercentage(rel, this);
+			} catch (JaninoRelMetadataProvider.NoHandler e) {
+				filteredPercentageHandler = revise(e.relClass, FlinkMetadata.FilteredPercentage.DEF);
 			}
 		}
 	}

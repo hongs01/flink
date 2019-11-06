@@ -240,4 +240,27 @@ public abstract class FlinkMetadata {
 		}
 	}
 
+	/**
+	 * Metadata about FilteredPercentage.
+	 */
+	public interface FilteredPercentage extends Metadata {
+
+		Method METHOD = Types.lookupMethod(FilteredPercentage.class, "getFilteredPercentage");
+
+		MetadataDef<FilteredPercentage> DEF = MetadataDef.of(
+				FilteredPercentage.class,
+				FilteredPercentage.Handler.class,
+				METHOD);
+
+		Double getFilteredPercentage();
+
+		/**
+		 * Handler API.
+		 */
+		interface Handler extends MetadataHandler<FilteredPercentage> {
+			Double getFilteredPercentage(RelNode r, RelMetadataQuery mq);
+		}
+
+	}
+
 }
