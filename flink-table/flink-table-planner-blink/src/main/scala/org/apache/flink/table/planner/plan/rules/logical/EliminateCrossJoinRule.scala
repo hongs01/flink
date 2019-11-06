@@ -55,17 +55,12 @@ class EliminateCrossJoinRule extends RelOptRule(
         join.getJoinFilter, ImmutableSet.of[CorrelationId](), JoinRelType.FULL)
       call.transformTo(fullJoin)
     } else {
+      // try to eliminate cross join
       val edges = getJoinEquiConditionEdges(join)
-      if (getJoinEquiConditionConnectivity(join, edges)) {
-        // we can eliminate cross join, reorder joins
-        val (newInputToOld, newInputRefToOld, oldInputRefToNew) = getMapping(join, edges)
-        val joinAndProject =
-          swapJoinsAndProject(join, newInputToOld, newInputRefToOld, oldInputRefToNew)
-        call.transformTo(joinAndProject)
-      } else {
-        // can't eliminate cross join, do not reorder joins
-        call.transformTo(multiJoinToJoin(join))
-      }
+      val (newInputToOld, newInputRefToOld, oldInputRefToNew) = getMapping(join, edges)
+      val joinAndProject =
+        swapJoinsAndProject(join, newInputToOld, newInputRefToOld, oldInputRefToNew)
+      call.transformTo(joinAndProject)
     }
   }
 
@@ -103,57 +98,20 @@ class EliminateCrossJoinRule extends RelOptRule(
 
     // an equi condition connects two inputs
     val edges = ArrayBuffer.empty[(Int, Int)]
-    def splitJoinConditions(rex: RexNode): Unit = {
-      if (rex.isA(SqlKind.AND)) {
-        val iter = rex.asInstanceOf[RexCall].operands.iterator
-        while (iter.hasNext) {
-          splitJoinConditions(iter.next)
-        }
-      } else {
-        if (isEquiCondition(rex)) {
-          val call = rex.asInstanceOf[RexCall]
-          if (!call.operands.get(0).isInstanceOf[RexInputRef] ||
-            !call.operands.get(1).isInstanceOf[RexInputRef]) {
-            return
-          }
-
-          val left = call.operands.get(0).asInstanceOf[RexInputRef]
-          val right = call.operands.get(1).asInstanceOf[RexInputRef]
-          val leftInputIdx = findRef(left.getIndex, joinEnd)
-          val rightInputIdx = findRef(right.getIndex, joinEnd)
-          edges.append((leftInputIdx, rightInputIdx))
+    for (rex <- RelOptUtil.conjunctions(join.getJoinFilter).asScala) {
+      if (isEquiCondition(rex)) {
+        val call = rex.asInstanceOf[RexCall]
+        (call.operands.get(0), call.operands.get(1)) match {
+          case (left: RexInputRef, right: RexInputRef) =>
+            val leftInputIdx = findRef(left.getIndex, joinEnd)
+            val rightInputIdx = findRef(right.getIndex, joinEnd)
+            edges.append((leftInputIdx, rightInputIdx))
+          case _ =>
         }
       }
     }
-    splitJoinConditions(join.getJoinFilter)
 
     edges
-  }
-
-  private def getJoinEquiConditionConnectivity(join: MultiJoin, edges: Seq[(Int, Int)]): Boolean = {
-    // union-find algorithm to check connectivity
-    val root = ArrayBuffer.range(0, join.getInputs.size())
-
-    def findRoot(node: Int): Int = {
-      if (root(node) != node) {
-        root(node) = findRoot(root(node))
-      }
-      root(node)
-    }
-
-    edges.foreach(e => {
-      val a = findRoot(e._1)
-      val b = findRoot(e._2)
-      root(a) = b
-    })
-
-    var rootCount = 0
-    for (i <- root.indices) {
-      if (join.getJoinTypes.get(i) == JoinRelType.INNER) {
-        rootCount += (if (root(i) == i) 1 else 0)
-      }
-    }
-    rootCount == 1
   }
 
   /**
@@ -162,8 +120,8 @@ class EliminateCrossJoinRule extends RelOptRule(
     * 2nd sequence: index = new input ref index, value = old input ref index
     * 3rd sequence: index = old input ref index, value = new input ref index
     */
-  private def getMapping(join: MultiJoin, edges: Seq[(Int, Int)])
-  : (Seq[Int], Seq[Int], Seq[Int]) = {
+  private def getMapping(join: MultiJoin, edges: Seq[(Int, Int)]):
+  (Seq[Int], Seq[Int], Seq[Int]) = {
     // traverse the graph to generate a new join order
     val visited = ArrayBuffer.fill(join.getInputs.size){false}
     val graph = Seq.fill(join.getInputs.size()){ArrayBuffer.empty[Int]}
@@ -171,31 +129,26 @@ class EliminateCrossJoinRule extends RelOptRule(
       graph(edge._1).append(edge._2)
       graph(edge._2).append(edge._1)
     }
-
-    def getStart: Int = {
-      for (i <- 0 until join.getInputs.size) {
-        if (join.getJoinTypes.get(i) == JoinRelType.INNER) {
-          return i
-        }
-      }
-      throw new RuntimeException("No inner join table found. This is a bug.")
-    }
-
-    val start = getStart
-    visited(start) = true
-    // we use priority queue here
-    // because we want to keep the original ordering of joins as much as possible
-    val priorityQueue = collection.mutable.PriorityQueue(start).reverse
     val order = ArrayBuffer.empty[Int]
-    while (priorityQueue.nonEmpty) {
-      val currentJoin = priorityQueue.head
-      priorityQueue.dequeue
-      order += currentJoin
 
-      for (nextJoin <- graph(currentJoin)) {
-        if (!visited(nextJoin)) {
-          visited(nextJoin) = true
-          priorityQueue.enqueue(nextJoin)
+    for (start <- 0 until join.getInputs.size) {
+      if (join.getJoinTypes.get(start) == JoinRelType.INNER && !visited(start)) {
+        // we found an unvisited inner join input with the smallest index
+        visited(start) = true
+        // we use priority queue here
+        // because we want to keep the original ordering of joins as much as possible
+        val priorityQueue = collection.mutable.PriorityQueue(start).reverse
+        while (priorityQueue.nonEmpty) {
+          val currentJoin = priorityQueue.head
+          priorityQueue.dequeue
+          order += currentJoin
+
+          for (nextJoin <- graph(currentJoin)) {
+            if (!visited(nextJoin)) {
+              visited(nextJoin) = true
+              priorityQueue.enqueue(nextJoin)
+            }
+          }
         }
       }
     }
@@ -215,8 +168,8 @@ class EliminateCrossJoinRule extends RelOptRule(
       }
     }
 
-    val joinEnd = getJoinEnd(join)
     // generate mapping. index = new input ref index, value = old input ref index
+    val joinEnd = getJoinEnd(join)
     val newInputRefToOld = ArrayBuffer.empty[Int]
     for (i <- newInputToOld) {
       val fieldCount = join.getInput(i).getRowType.getFieldCount
@@ -224,6 +177,7 @@ class EliminateCrossJoinRule extends RelOptRule(
         newInputRefToOld += joinEnd(i) - (fieldCount - j)
       }
     }
+
     // index = old input ref index, value = new input ref index
     val oldInputRefToNew = ArrayBuffer.fill(newInputRefToOld.size){0}
     for ((v, i) <- newInputRefToOld.zipWithIndex) {
@@ -299,32 +253,31 @@ class EliminateCrossJoinRule extends RelOptRule(
     LogicalProject.create(newJoinTree, projects, join.getRowType)
   }
 
+  /**
+    * Change multi-join back to join.
+    * The inputs will be joined from left to right, skipping outer join inputs.
+    * The outer join inputs will be joined at the end.
+    */
   private def multiJoinToJoin(join: MultiJoin): RelNode = {
     val joinEnd = getJoinEnd(join)
 
     val joinConditions = Seq.fill(join.getInputs.size) {ArrayBuffer.empty[RexNode]}
-    val otherConditions = ArrayBuffer.empty[RexNode]
 
-    // extract equi conditions and non-equi conditions
-    def splitJoinConditions(rex: RexNode): Unit = {
-      if (rex.isA(SqlKind.AND)) {
-        rex.asInstanceOf[RexCall].operands.asScala.foreach(splitJoinConditions)
-      } else {
-        if (isEquiCondition(rex)) {
-          val call = rex.asInstanceOf[RexCall]
-          (call.operands.get(0), call.operands.get(1)) match {
-            case (left: RexInputRef, right: RexInputRef) =>
-              val leftInputIdx = findRef(left.getIndex, joinEnd)
-              val rightInputIdx = findRef(right.getIndex, joinEnd)
-              joinConditions(Math.max(leftInputIdx, rightInputIdx)).append(rex)
-              return
-            case _ =>
-          }
-        }
-        otherConditions.append(rex)
+    // extract conditions and relate each condition with the right-most input in that condition
+    class InputFinder extends RelOptUtil.InputFinder {
+      var maxInputRef: Int = 0
+
+      override def visitInputRef(inputRef: RexInputRef): Void = {
+        maxInputRef = Math.max(maxInputRef, inputRef.getIndex)
+        super.visitInputRef(inputRef)
       }
     }
-    splitJoinConditions(join.getJoinFilter)
+
+    for (condition <- RelOptUtil.conjunctions(join.getJoinFilter).asScala) {
+      val inputFinder = new InputFinder()
+      condition.accept(inputFinder)
+      joinConditions(findRef(inputFinder.maxInputRef, joinEnd)).append(condition)
+    }
 
     val rexBuilder = join.getCluster.getRexBuilder
     var joinTree: RelNode = null
@@ -337,6 +290,8 @@ class EliminateCrossJoinRule extends RelOptRule(
         } else {
           joinTree = LogicalJoin.create(
             joinTree, join.getInput(i),
+            // as the inputs on the left have been joined together,
+            // we can safely apply the join conditions
             RexUtil.composeConjunction(rexBuilder, joinConditions(i).toList.asJava, false),
             ImmutableSet.of[CorrelationId](), JoinRelType.INNER)
         }
@@ -364,12 +319,7 @@ class EliminateCrossJoinRule extends RelOptRule(
     // finally add post join conditions
     val postJoinConditions = join.getPostJoinFilter
     if (postJoinConditions != null) {
-      otherConditions.append(postJoinConditions)
-    }
-    val otherConditionsConj =
-      RexUtil.composeConjunction(rexBuilder, otherConditions.toList.asJava, true)
-    if (otherConditionsConj != null) {
-      joinTree = LogicalFilter.create(joinTree, otherConditionsConj)
+      joinTree = LogicalFilter.create(joinTree, postJoinConditions)
     }
 
     joinTree
