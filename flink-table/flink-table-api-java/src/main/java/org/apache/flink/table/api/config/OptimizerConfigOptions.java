@@ -103,4 +103,10 @@ public class OptimizerConfigOptions {
 		key("table.optimizer.eliminate-cross-join-enabled")
 		.defaultValue(false)
 		.withDescription("Try to eliminate cross join in optimizer. Default is disabled.");
+
+	@Documentation.TableOption(execMode = Documentation.ExecMode.BATCH)
+	public static final ConfigOption<Boolean> TABLE_OPTIMIZER_FILTER_FIRST_JOIN_REORDER_ENABLED =
+			key("table.optimizer.filter-first-join-reorder-enabled")
+					.defaultValue(false)
+					.withDescription("Enables filter first join reorder in optimizer. Default is disabled.");
 }

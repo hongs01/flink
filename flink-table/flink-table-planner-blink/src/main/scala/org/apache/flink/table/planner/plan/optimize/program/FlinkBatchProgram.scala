@@ -157,6 +157,26 @@ object FlinkBatchProgram {
           .build())
     }
 
+    // filter first join reorder
+    if (config.getBoolean(OptimizerConfigOptions.TABLE_OPTIMIZER_FILTER_FIRST_JOIN_REORDER_ENABLED)) {
+      chainedProgram.addLast(
+        ELIMINATE_CROSS_JOIN,
+        FlinkGroupProgramBuilder.newBuilder[BatchOptimizeContext]
+          .addProgram(
+            FlinkHepRuleSetProgramBuilder.newBuilder
+              .setHepRulesExecutionType(HEP_RULES_EXECUTION_TYPE.RULE_COLLECTION)
+              .setHepMatchOrder(HepMatchOrder.BOTTOM_UP)
+              .add(FlinkBatchRuleSets.JOIN_REORDER_PREPARE_RULES)
+              .build(), "prepare join reorder")
+          .addProgram(
+            FlinkHepRuleSetProgramBuilder.newBuilder
+              .setHepRulesExecutionType(HEP_RULES_EXECUTION_TYPE.RULE_SEQUENCE)
+              .setHepMatchOrder(HepMatchOrder.BOTTOM_UP)
+              .add(FlinkBatchRuleSets.BATCH_FILTER_FIRST_JOIN_REORDER_RULES)
+              .build(), "filter first join reorder")
+          .build())
+    }
+
     // join reorder
     if (config.getBoolean(OptimizerConfigOptions.TABLE_OPTIMIZER_JOIN_REORDER_ENABLED)) {
       chainedProgram.addLast(

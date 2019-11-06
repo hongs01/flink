@@ -240,6 +240,10 @@ object FlinkBatchRuleSets {
     EliminateCrossJoinRule.INSTANCE
   )
 
+  val BATCH_FILTER_FIRST_JOIN_REORDER_RULES: RuleSet = RuleSets.ofList(
+    FlinkFilterFirstJoinReorderRule.INSTANCE
+  )
+
   /**
     * RuleSet to do logical optimize.
     * This RuleSet is a sub-set of [[LOGICAL_OPT_RULES]].
