@@ -95,6 +95,18 @@ public class CollectionDataSets {
 		return env.fromCollection(data);
 	}
 
+	public static DataSet<Tuple2<String, Double>> getSmall2TupleDataSet(ExecutionEnvironment env) {
+
+		List<Tuple2<String, Double>> data = new ArrayList<>();
+		data.add(new Tuple2<>("boy", 100d));
+		data.add(new Tuple2<>(null, 50d));
+
+		Collections.shuffle(data);
+
+		return env.fromCollection(data);
+	}
+
+
 	public static DataSet<Tuple5<Integer, Long, Integer, String, Long>> get5TupleDataSet(ExecutionEnvironment env) {
 
 		List<Tuple5<Integer, Long, Integer, String, Long>> data = new ArrayList<>();

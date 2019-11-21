@@ -479,6 +479,17 @@ class MiscITCase extends BatchTestBase {
     )
   }
 
+  @Test
+  def testScalarQueryJoin(): Unit = {
+    checkQuery(
+      Seq[(String, Double)](("boy", 100d), (null, 50d)),
+      "select t1.f0, t1.f1,(select avg(t2.f1) \n   from Table1 t2\n   where t2.f0 = t1.f0)\nfrom Table1 t1",
+      Seq(("boy", 100, 100), ("boy", 100, null))
+    )
+  }
+
+
+
   @Ignore // TODO: allows 123L="123"
   @Test
   def testCompareLongAndString(): Unit = {

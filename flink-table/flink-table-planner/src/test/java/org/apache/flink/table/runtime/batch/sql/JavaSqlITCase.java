@@ -174,4 +174,29 @@ public class JavaSqlITCase extends TableProgramsCollectionTestBase {
 		String expected = "bar\n" + "spam\n";
 		compareResultAsText(results, expected);
 	}
+
+	@Test
+	public void testScalarQuery() throws Exception {
+
+		ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
+		BatchTableEnvironment tableEnv = BatchTableEnvironment.create(env, config());
+		DataSet<Tuple2<String, Double>> ds = CollectionDataSets.getSmall2TupleDataSet(env);
+		tableEnv.registerDataSet("t", ds, "a, b");
+
+		String sqlQuery =
+			"select t1.a, t1.b, \n" +
+			"  (select avg(t2.b) \n" +
+			"   from t t2\n" +
+			"   where t2.a = t1.a)\n" +
+			"from t t1 order by  t1.a, t1.b\n";
+		Table result = tableEnv.sqlQuery(sqlQuery);
+
+		System.out.println(tableEnv.explain(result));
+
+		DataSet<Row> resultSet = tableEnv.toDataSet(result, Row.class);
+		List<Row> results = resultSet.collect();
+		String expected = "boy,100.0,100.0\n" + "null,50.0,null\n";
+		compareResultAsText(results, expected);
+	}
+
 }
