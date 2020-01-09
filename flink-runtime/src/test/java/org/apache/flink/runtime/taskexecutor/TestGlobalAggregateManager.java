@@ -18,14 +18,25 @@
 
 package org.apache.flink.runtime.taskexecutor;
 
-import java.io.IOException;
 import org.apache.flink.api.common.functions.AggregateFunction;
+
+import java.util.HashMap;
+import java.util.Map;
 
 public class TestGlobalAggregateManager implements GlobalAggregateManager {
 
+	private Map<String, Object> accumulators = new HashMap<>();
+
+	@SuppressWarnings("unchecked")
 	@Override
 	public <IN, ACC, OUT> OUT updateGlobalAggregate(String aggregateName, Object aggregand,
-		AggregateFunction<IN, ACC, OUT> aggregateFunction) throws IOException {
-		return aggregateFunction.getResult(aggregateFunction.createAccumulator());
+		AggregateFunction<IN, ACC, OUT> aggregateFunction) {
+		Object accumulator = accumulators.get(aggregateName);
+		if(null == accumulator) {
+			accumulator = aggregateFunction.createAccumulator();
+		}
+		accumulator = aggregateFunction.add((IN) aggregand, (ACC) accumulator);
+		accumulators.put(aggregateName, accumulator);
+		return aggregateFunction.getResult((ACC) accumulator);
 	}
 }
