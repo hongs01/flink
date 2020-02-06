@@ -56,7 +56,6 @@ import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.Test;
 
-import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Time;
 import java.sql.Timestamp;
@@ -531,102 +530,6 @@ public class HBaseConnectorITCase extends HBaseTestBase {
 		expected.add("3,30,Welt-3");
 
 		StreamITCase.compareWithList(expected);
-	}
-
-
-	// -------------------------------------------------------------------------------------
-	// HBase DataType tests
-	// -------------------------------------------------------------------------------------
-
-	// prepare data
-	private static final List<Row> testData3 = new ArrayList<>();
-	private static final RowTypeInfo testTypeInfo3 = new RowTypeInfo(
-		new TypeInformation[]{Types.INT, Types.INT, Types.STRING, Types.LONG, Types.DOUBLE, Types.BOOLEAN,
-			Types.STRING, Types.SQL_TIMESTAMP, Types.SQL_DATE, Types.SQL_TIME, Types.SQL_TIMESTAMP, Types.BIG_DEC},
-		new String[]{"rowkey", "f1c1", "f2c1", "f2c2", "f3c1", "f3c2", "f3c3", "f4c1", "f4c2", "f4c3", "f5c1", "f5c2"});
-
-	static {
-		testData3.add(Row.of(1, 10, "Hello-1", 100L, 1.01, false, "Welt-1",
-			Timestamp.valueOf("2019-08-18 19:00:00"), Date.valueOf("2019-08-18"), Time.valueOf("19:00:00"),
-			Timestamp.valueOf("2019-08-18 19:00:00.000000001"), BigDecimal.valueOf(123456.0001)));
-		testData3.add(Row.of(2, 20, "Hello-2", 200L, 2.02, true, "Welt-2",
-			Timestamp.valueOf("2019-08-18 19:01:00"), Date.valueOf("2019-08-18"), Time.valueOf("19:01:00"),
-			Timestamp.valueOf("2019-08-18 19:00:00.000000002"), BigDecimal.valueOf(123456.1234)));
-		testData3.add(Row.of(3, 30, "Hello-3", 300L, 3.03, false, "Welt-3",
-			Timestamp.valueOf("2019-08-18 19:02:00"), Date.valueOf("2019-08-18"), Time.valueOf("19:02:00"),
-			Timestamp.valueOf("2019-08-18 19:00:00.000000003"), BigDecimal.valueOf(123456.1000)));
-		testData3.add(Row.of(4, 40, null, 400L, 4.04, true, "Welt-4",
-			Timestamp.valueOf("2019-08-18 19:03:00"), Date.valueOf("2019-08-18"), Time.valueOf("19:03:00"),
-			Timestamp.valueOf("2019-08-18 19:00:00.400000000"), BigDecimal.valueOf(123456.2345)));
-	}
-
-	@Test
-	public void testTableSourceSinkWithDaType() throws Exception {
-		StreamExecutionEnvironment execEnv = StreamExecutionEnvironment.getExecutionEnvironment();
-		StreamTableEnvironment tEnv = StreamTableEnvironment.create(execEnv, streamSettings);
-
-		DataStream<Row> ds = execEnv.fromCollection(testData3).returns(testTypeInfo3);
-		tEnv.registerDataStream("src", ds);
-
-		// register hbase table
-		String quorum = getZookeeperQuorum();
-		String ddl = "CREATE TABLE hbase (\n" +
-			"    rowkey INT," +
-			"    family1 ROW<col1 INT>,\n" +
-			"    family2 ROW<col1 VARCHAR, col2 BIGINT>,\n" +
-			"    family3 ROW<col1 DOUBLE, col2 BOOLEAN, col3 VARCHAR>,\n" +
-			"    family4 ROW<col1 TIMESTAMP(3), col2 DATE, col3 TIME(3)>,\n" +
-			"	 family5 ROW<col1 TIMESTAMP(9), col2 DECIMAL(10, 4)>" +
-			") WITH (\n" +
-			"    'connector.type' = 'hbase',\n" +
-			"    'connector.version' = '1.4.3',\n" +
-			"    'connector.table-name' = 'testTable3',\n" +
-			"    'connector.zookeeper.quorum' = '" + quorum + "',\n" +
-			"    'connector.zookeeper.znode.parent' = '/hbase' " +
-			")";
-		tEnv.sqlUpdate(ddl);
-
-		String query = "INSERT INTO hbase " +
-			"SELECT rowkey, ROW(f1c1), ROW(f2c1, f2c2), ROW(f3c1, f3c2, f3c3), ROW(f4c1, f4c2, f4c3)," +
-			"ROW(f5c1, f5c2) FROM src";
-		tEnv.sqlUpdate(query);
-
-		// wait to finish
-		tEnv.execute("HBase Job");
-
-		// start a batch scan job to verify contents in HBase table
-		TableEnvironment batchTableEnv = createBatchTableEnv();
-		batchTableEnv.sqlUpdate(ddl);
-
-		Table table = batchTableEnv.sqlQuery(
-			"SELECT " +
-				"  h.rowkey, " +
-				"  h.family1.col1, " +
-				"  h.family2.col1, " +
-				"  h.family2.col2, " +
-				"  h.family3.col1, " +
-				"  h.family3.col2, " +
-				"  h.family3.col3, " +
-				"  h.family4.col1, " +
-				"  h.family4.col2, " +
-				"  h.family4.col3, " +
-				"  h.family5.col1, " +
-				"  h.family5.col2 " +
-				"FROM hbase AS h"
-		);
-
-		List<Row> results = collectBatchResult(table);
-		String expected =
-			"1,10,Hello-1,100,1.01,false,Welt-1,2019-08-18 19:00:00.0,2019-08-18,19:00:00," +
-			"2019-08-18 19:00:00.000000001,123456.0001\n" +
-			"2,20,Hello-2,200,2.02,true,Welt-2,2019-08-18 19:01:00.0,2019-08-18,19:01:00," +
-			"2019-08-18 19:00:00.000000002,123456.1234\n" +
-			"3,30,Hello-3,300,3.03,false,Welt-3,2019-08-18 19:02:00.0,2019-08-18,19:02:00," +
-			"2019-08-18 19:00:00.000000003,123456.1000\n" +
-			"4,40,,400,4.04,true,Welt-4,2019-08-18 19:03:00.0,2019-08-18,19:03:00," +
-			"2019-08-18 19:00:00.400000000,123456.2345\n";
-
-		TestBaseUtils.compareResultAsText(results, expected);
 	}
 
 	private static Map<String, String> hbaseTableProperties() {
