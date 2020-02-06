@@ -18,9 +18,7 @@
 
 package org.apache.flink.addons.hbase;
 
-import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.api.java.typeutils.RowTypeInfo;
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.table.descriptors.DescriptorProperties;
 import org.apache.flink.table.descriptors.HBaseValidator;
@@ -28,6 +26,9 @@ import org.apache.flink.table.factories.StreamTableSinkFactory;
 import org.apache.flink.table.factories.StreamTableSourceFactory;
 import org.apache.flink.table.sinks.StreamTableSink;
 import org.apache.flink.table.sources.StreamTableSource;
+import org.apache.flink.table.types.DataType;
+import org.apache.flink.table.types.FieldsDataType;
+import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.utils.TableSchemaUtils;
 import org.apache.flink.types.Row;
 
@@ -125,29 +126,27 @@ public class HBaseTableFactory implements StreamTableSourceFactory<Row>, StreamT
 	private HBaseTableSchema validateTableSchema(TableSchema schema) {
 		HBaseTableSchema hbaseSchema = new HBaseTableSchema();
 		String[] fieldNames = schema.getFieldNames();
-		TypeInformation[] fieldTypes = schema.getFieldTypes();
+		DataType[] fieldTypes = schema.getFieldDataTypes();
 		for (int i = 0; i < fieldNames.length; i++) {
 			String name = fieldNames[i];
-			TypeInformation<?> type = fieldTypes[i];
-			if (type instanceof RowTypeInfo) {
-				RowTypeInfo familyType = (RowTypeInfo) type;
-				String[] qualifierNames = familyType.getFieldNames();
-				TypeInformation[] qualifierTypes = familyType.getFieldTypes();
-				for (int j = 0; j < familyType.getArity(); j++) {
-					// HBase connector doesn't support LocalDateTime
-					// use Timestamp as conversion class for now.
-					Class clazz = qualifierTypes[j].getTypeClass();
+			DataType type = fieldTypes[i];
+			if (type.getLogicalType() instanceof RowType) {
+				FieldsDataType familyType = (FieldsDataType) type;
+				for (RowType.RowField rowField: ((RowType) familyType.getLogicalType()).getFields()) {
+					String qualifierName = rowField.getName();
+					DataType qualifierType = familyType.getFieldDataTypes().get(qualifierName);
+					Class clazz = qualifierType.getConversionClass();
 					if (LocalDateTime.class.equals(clazz)) {
-						clazz = Timestamp.class;
+						qualifierType = qualifierType.bridgedTo(Timestamp.class);
 					} else if (LocalDate.class.equals(clazz)) {
-						clazz = Date.class;
+						qualifierType = qualifierType.bridgedTo(Date.class);
 					} else if (LocalTime.class.equals(clazz)) {
-						clazz = Time.class;
+						qualifierType = qualifierType.bridgedTo(Time.class);
 					}
-					hbaseSchema.addColumn(name, qualifierNames[j], clazz);
+					hbaseSchema.addColumn(name, qualifierName, qualifierType);
 				}
 			} else {
-				hbaseSchema.setRowKey(name, type.getTypeClass());
+				hbaseSchema.setRowKey(name, type);
 			}
 		}
 		return hbaseSchema;

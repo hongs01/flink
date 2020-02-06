@@ -20,6 +20,7 @@ package org.apache.flink.addons.hbase.util;
 
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.table.types.DataType;
 
 import org.apache.hadoop.hbase.util.Bytes;
 
@@ -61,9 +62,9 @@ public class HBaseTypeUtils {
 				return Bytes.toDouble(value);
 			case 8:
 				return Bytes.toBoolean(value);
-			case 9: // sql.Timestamp encoded as long
-				return new Timestamp(Bytes.toLong(value));
-			case 10: // sql.Date encoded as long
+			case 9: // sql.Timestamp encoded as string to support Timestamp(9)
+				return Timestamp.valueOf(new String(value, stringCharset));
+			case 10: // sql.Dateencoded as long
 				return new Date(Bytes.toLong(value));
 			case 11: // sql.Time encoded as long
 				return new Time(Bytes.toLong(value));
@@ -100,8 +101,8 @@ public class HBaseTypeUtils {
 				return Bytes.toBytes((double) value);
 			case 8:
 				return Bytes.toBytes((boolean) value);
-			case 9: // sql.Timestamp encoded to Long
-				return Bytes.toBytes(((Timestamp) value).getTime());
+			case 9: // sql.Timestamp encoded as String to support Timestamp(9)
+				return value == null ? EMPTY_BYTES : ((Timestamp) value).toString().getBytes(stringCharset);
 			case 10: // sql.Date encoded as long
 				return Bytes.toBytes(((Date) value).getTime());
 			case 11: // sql.Time encoded as long
@@ -121,6 +122,13 @@ public class HBaseTypeUtils {
 	 */
 	public static int getTypeIndex(TypeInformation typeInfo) {
 		return getTypeIndex(typeInfo.getTypeClass());
+	}
+
+	/**
+	 * Get the type index (type representation in HBase connector) from the {@link DataType}.
+	 */
+	public static int getTypeIndex(DataType dataType) {
+		return getTypeIndex(dataType.getConversionClass());
 	}
 
 	/**

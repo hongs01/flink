@@ -31,6 +31,7 @@ import org.apache.flink.table.sources.BatchTableSource;
 import org.apache.flink.table.sources.LookupableTableSource;
 import org.apache.flink.table.sources.ProjectableTableSource;
 import org.apache.flink.table.sources.StreamTableSource;
+import org.apache.flink.table.types.DataType;
 import org.apache.flink.types.Row;
 import org.apache.flink.util.Preconditions;
 
@@ -99,12 +100,32 @@ public class HBaseTableSource implements BatchTableSource<Row>, ProjectableTable
 	}
 
 	/**
+	 * Adds a column defined by family, qualifier, and type to the table schema.
+	 *
+	 * @param family    the family name
+	 * @param qualifier the qualifier name
+	 * @param dataType  the data type of the qualifier
+	 */
+	public void addColumn(String family, String qualifier, DataType dataType) {
+		this.hbaseSchema.addColumn(family, qualifier, dataType);
+	}
+
+	/**
 	 * Sets row key information in the table schema.
 	 * @param rowKeyName the row key field name
 	 * @param clazz the data type of the row key
 	 */
 	public void setRowKey(String rowKeyName, Class<?> clazz) {
 		this.hbaseSchema.setRowKey(rowKeyName, clazz);
+	}
+
+	/**
+	 * Sets row key information in the table schema.
+	 * @param rowKeyName the row key field name
+	 * @param dataType the data type of the row key
+	 */
+	public void setRowKey(String rowKeyName, DataType dataType) {
+		this.hbaseSchema.setRowKey(rowKeyName, dataType);
 	}
 
 	/**
@@ -121,6 +142,11 @@ public class HBaseTableSource implements BatchTableSource<Row>, ProjectableTable
 		HBaseTableSchema projectedSchema = hbaseSchema.getProjectedHBaseTableSchema(projectFields);
 		return projectedSchema.convertsToTableSchema().toRowType();
 	}
+
+	@Override
+	public DataType getProducedDataType() {
+		HBaseTableSchema projectedSchema = hbaseSchema.getProjectedHBaseTableSchema(projectFields);
+		return projectedSchema.convertsToTableSchema().toRowDataType();	}
 
 	@Override
 	public TableSchema getTableSchema() {

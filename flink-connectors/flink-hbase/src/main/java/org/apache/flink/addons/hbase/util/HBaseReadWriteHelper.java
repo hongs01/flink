@@ -19,7 +19,7 @@
 package org.apache.flink.addons.hbase.util;
 
 import org.apache.flink.addons.hbase.HBaseTableSchema;
-import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.table.types.DataType;
 import org.apache.flink.types.Row;
 
 import org.apache.hadoop.hbase.client.Delete;
@@ -65,7 +65,7 @@ public class HBaseReadWriteHelper {
 		String[] familyNames = hbaseTableSchema.getFamilyNames();
 		for (int f = 0; f < families.length; f++) {
 			this.qualifiers[f] = hbaseTableSchema.getQualifierKeys(familyNames[f]);
-			TypeInformation[] typeInfos = hbaseTableSchema.getQualifierTypes(familyNames[f]);
+			DataType[] typeInfos = hbaseTableSchema.getQualifierDataTypes(familyNames[f]);
 			this.qualifierTypes[f] = new int[typeInfos.length];
 			for (int i = 0; i < typeInfos.length; i++) {
 				qualifierTypes[f][i] = HBaseTypeUtils.getTypeIndex(typeInfos[i]);
@@ -75,7 +75,7 @@ public class HBaseReadWriteHelper {
 		this.charset = Charset.forName(hbaseTableSchema.getStringCharset());
 		// row key
 		this.rowKeyIndex = hbaseTableSchema.getRowKeyIndex();
-		this.rowKeyType = hbaseTableSchema.getRowKeyTypeInfo()
+		this.rowKeyType = hbaseTableSchema.getRowKeyDataType()
 			.map(HBaseTypeUtils::getTypeIndex)
 			.orElse(-1);
 
