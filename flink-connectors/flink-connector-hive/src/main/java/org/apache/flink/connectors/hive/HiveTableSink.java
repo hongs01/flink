@@ -33,9 +33,9 @@ import org.apache.flink.table.catalog.hive.descriptors.HiveCatalogValidator;
 import org.apache.flink.table.catalog.hive.util.HiveReflectionUtils;
 import org.apache.flink.table.filesystem.FileSystemOutputFormat;
 import org.apache.flink.table.filesystem.FileSystemStreamingSink;
+import org.apache.flink.table.sinks.AppendStreamTableSink;
 import org.apache.flink.table.sinks.OverwritableTableSink;
 import org.apache.flink.table.sinks.PartitionableTableSink;
-import org.apache.flink.table.sinks.StreamTableSink;
 import org.apache.flink.table.sinks.TableSink;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.utils.TableSchemaUtils;
@@ -63,7 +63,7 @@ import static org.apache.flink.table.descriptors.StreamTableDescriptorValidator.
 /**
  * Table sink to write to Hive tables.
  */
-public class HiveTableSink implements StreamTableSink<Row>, PartitionableTableSink, OverwritableTableSink {
+public class HiveTableSink implements AppendStreamTableSink<Row>, PartitionableTableSink, OverwritableTableSink {
 
 	private final JobConf jobConf;
 	private final CatalogTable catalogTable;
@@ -88,11 +88,6 @@ public class HiveTableSink implements StreamTableSink<Row>, PartitionableTableSi
 		tableSchema = TableSchemaUtils.getPhysicalSchema(table.getSchema());
 		String updateMode = table.getProperties().get(UPDATE_MODE);
 		this.isStreaming = UPDATE_MODE_VALUE_APPEND.equalsIgnoreCase(updateMode);
-	}
-
-	@Override
-	public final void emitDataStream(DataStream<Row> dataStream) {
-		consumeDataStream(dataStream);
 	}
 
 	@Override
