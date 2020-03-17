@@ -48,6 +48,7 @@ public class ElasticsearchValidator extends ConnectorDescriptorValidator {
 	public static final String CONNECTOR_HOSTS_PORT = "port";
 	public static final String CONNECTOR_HOSTS_PROTOCOL = "protocol";
 	public static final String CONNECTOR_INDEX = "connector.index";
+	public static final String CONNECTOR_INDEX_ALIAS = "connector.index-alias";
 	public static final String CONNECTOR_DOCUMENT_TYPE = "connector.document-type";
 	public static final String CONNECTOR_KEY_DELIMITER = "connector.key-delimiter";
 	public static final String CONNECTOR_KEY_NULL_LITERAL = "connector.key-null-literal";
@@ -76,6 +77,7 @@ public class ElasticsearchValidator extends ConnectorDescriptorValidator {
 		properties.validateValue(CONNECTOR_TYPE, CONNECTOR_TYPE_VALUE_ELASTICSEARCH, false);
 		validateVersion(properties);
 		validateHosts(properties);
+		validateIndexProperties(properties);
 		validateGeneralProperties(properties);
 		validateFailureHandler(properties);
 		validateBulkFlush(properties);
@@ -103,10 +105,14 @@ public class ElasticsearchValidator extends ConnectorDescriptorValidator {
 	}
 
 	private void validateGeneralProperties(DescriptorProperties properties) {
-		properties.validateString(CONNECTOR_INDEX, false, 1);
 		properties.validateString(CONNECTOR_DOCUMENT_TYPE, false, 1);
 		properties.validateString(CONNECTOR_KEY_DELIMITER, true);
 		properties.validateString(CONNECTOR_KEY_NULL_LITERAL, true);
+	}
+
+	private void validateIndexProperties(DescriptorProperties properties) {
+		properties.validateString(CONNECTOR_INDEX_ALIAS, true, 1);
+		properties.validateString(CONNECTOR_INDEX, false, 1);
 	}
 
 	private void validateFailureHandler(DescriptorProperties properties) {

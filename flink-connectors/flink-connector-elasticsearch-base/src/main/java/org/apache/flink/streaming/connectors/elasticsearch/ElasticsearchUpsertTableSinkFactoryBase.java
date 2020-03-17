@@ -82,6 +82,7 @@ import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTO
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_HOSTS_PORT;
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_HOSTS_PROTOCOL;
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_INDEX;
+import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_INDEX_ALIAS;
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_KEY_DELIMITER;
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_KEY_NULL_LITERAL;
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_TYPE_VALUE_ELASTICSEARCH;
@@ -129,6 +130,7 @@ public abstract class ElasticsearchUpsertTableSinkFactoryBase implements StreamT
 		properties.add(CONNECTOR_HOSTS + ".#." + CONNECTOR_HOSTS_PORT);
 		properties.add(CONNECTOR_HOSTS + ".#." + CONNECTOR_HOSTS_PROTOCOL);
 		properties.add(CONNECTOR_INDEX);
+		properties.add(CONNECTOR_INDEX_ALIAS);
 		properties.add(CONNECTOR_DOCUMENT_TYPE);
 		properties.add(CONNECTOR_KEY_DELIMITER);
 		properties.add(CONNECTOR_KEY_NULL_LITERAL);
@@ -273,6 +275,8 @@ public abstract class ElasticsearchUpsertTableSinkFactoryBase implements StreamT
 
 		descriptorProperties.getOptionalBoolean(CONNECTOR_FLUSH_ON_CHECKPOINT)
 			.ifPresent(v -> options.put(SinkOption.DISABLE_FLUSH_ON_CHECKPOINT, String.valueOf(!v)));
+		descriptorProperties.getOptionalString(CONNECTOR_INDEX_ALIAS)
+			.ifPresent(v -> options.put(SinkOption.INDEX_ALIAS, v));
 
 		mapSinkOption(descriptorProperties, options, CONNECTOR_BULK_FLUSH_MAX_ACTIONS, SinkOption.BULK_FLUSH_MAX_ACTIONS);
 		mapSinkOption(descriptorProperties, options, CONNECTOR_BULK_FLUSH_MAX_SIZE, SinkOption.BULK_FLUSH_MAX_SIZE);

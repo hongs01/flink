@@ -44,6 +44,7 @@ import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTO
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_FLUSH_ON_CHECKPOINT;
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_HOSTS;
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_INDEX;
+import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_INDEX_ALIAS;
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_KEY_DELIMITER;
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_KEY_NULL_LITERAL;
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_TYPE_VALUE_ELASTICSEARCH;
@@ -100,6 +101,16 @@ public class Elasticsearch extends ConnectorDescriptor {
 	 */
 	public Elasticsearch index(String index) {
 		internalProperties.putString(CONNECTOR_INDEX, index);
+		return this;
+	}
+
+	/**
+	 * Declares the Elasticsearch index alias for current index. Optional.
+	 *
+	 * @param indexAlias Elasticsearch index alias
+	 */
+	public Elasticsearch indexAlias(String indexAlias) {
+		internalProperties.putString(CONNECTOR_INDEX_ALIAS, indexAlias);
 		return this;
 	}
 
