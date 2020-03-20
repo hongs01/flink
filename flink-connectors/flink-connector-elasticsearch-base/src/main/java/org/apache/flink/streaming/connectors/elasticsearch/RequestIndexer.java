@@ -21,13 +21,15 @@ package org.apache.flink.streaming.connectors.elasticsearch;
 import org.apache.flink.annotation.PublicEvolving;
 
 import org.elasticsearch.action.ActionRequest;
+import org.elasticsearch.action.admin.indices.alias.IndicesAliasesRequest;
 import org.elasticsearch.action.delete.DeleteRequest;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.update.UpdateRequest;
 
 /**
  * Users add multiple delete, index or update requests to a {@link RequestIndexer} to prepare
- * them for sending to an Elasticsearch cluster.
+ * them for sending to an Elasticsearch cluster. Users can add admin-related likes alias index request
+ * to Elasticsearch cluster too, this kind of request will send to Elasticsearch cluster immediately.
  */
 @PublicEvolving
 public interface RequestIndexer {
@@ -73,4 +75,10 @@ public interface RequestIndexer {
 	 * @param updateRequests The multiple {@link UpdateRequest} to add.
 	 */
 	void add(UpdateRequest... updateRequests);
+
+	/**
+	 * Add {@link IndicesAliasesRequest} to the indexer to prepare for sending requests to Elasticsearch.
+	 * @param indicesAliasesRequests The {@link IndicesAliasesRequest} to add an alias for index.
+	 */
+	default void add(IndicesAliasesRequest... indicesAliasesRequests) {}
 }

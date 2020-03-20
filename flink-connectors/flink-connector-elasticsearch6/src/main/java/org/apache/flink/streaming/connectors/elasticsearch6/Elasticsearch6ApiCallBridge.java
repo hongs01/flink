@@ -20,6 +20,7 @@ package org.apache.flink.streaming.connectors.elasticsearch6;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchApiCallBridge;
 import org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchSinkBase;
+import org.apache.flink.streaming.connectors.elasticsearch.IndexManager;
 import org.apache.flink.streaming.connectors.elasticsearch.RequestIndexer;
 import org.apache.flink.util.Preconditions;
 
@@ -83,6 +84,11 @@ public class Elasticsearch6ApiCallBridge implements ElasticsearchApiCallBridge<R
 	}
 
 	@Override
+	public IndexManager createIndexManager(RestHighLevelClient restHighLevelClient) {
+		return new Elasticsearch6IndexManager(restHighLevelClient);
+	}
+
+	@Override
 	public Throwable extractFailureCauseFromBulkItemResponse(BulkItemResponse bulkItemResponse) {
 		if (!bulkItemResponse.isFailed()) {
 			return null;
@@ -121,11 +127,13 @@ public class Elasticsearch6ApiCallBridge implements ElasticsearchApiCallBridge<R
 	public RequestIndexer createBulkProcessorIndexer(
 			BulkProcessor bulkProcessor,
 			boolean flushOnCheckpoint,
-			AtomicLong numPendingRequestsRef) {
+			AtomicLong numPendingRequestsRef,
+			IndexManager indexManager) {
 		return new Elasticsearch6BulkProcessorIndexer(
 			bulkProcessor,
 			flushOnCheckpoint,
-			numPendingRequestsRef);
+			numPendingRequestsRef,
+			indexManager);
 	}
 
 	@Override

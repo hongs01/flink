@@ -21,6 +21,7 @@ package org.apache.flink.streaming.connectors.elasticsearch;
 import org.apache.flink.annotation.Internal;
 
 import org.elasticsearch.action.ActionRequest;
+import org.elasticsearch.action.admin.indices.alias.IndicesAliasesRequest;
 import org.elasticsearch.action.bulk.BulkProcessor;
 import org.elasticsearch.action.delete.DeleteRequest;
 import org.elasticsearch.action.index.IndexRequest;
@@ -45,11 +46,17 @@ class PreElasticsearch6BulkProcessorIndexer implements RequestIndexer {
 	private final BulkProcessor bulkProcessor;
 	private final boolean flushOnCheckpoint;
 	private final AtomicLong numPendingRequestsRef;
+	private final IndexManager indexManager;
 
-	PreElasticsearch6BulkProcessorIndexer(BulkProcessor bulkProcessor, boolean flushOnCheckpoint, AtomicLong numPendingRequestsRef) {
+	PreElasticsearch6BulkProcessorIndexer(
+			BulkProcessor bulkProcessor,
+			boolean flushOnCheckpoint,
+			AtomicLong numPendingRequestsRef,
+			IndexManager indexManager) {
 		this.bulkProcessor = checkNotNull(bulkProcessor);
 		this.flushOnCheckpoint = flushOnCheckpoint;
 		this.numPendingRequestsRef = checkNotNull(numPendingRequestsRef);
+		this.indexManager = indexManager;
 	}
 
 	@Override
@@ -79,6 +86,13 @@ class PreElasticsearch6BulkProcessorIndexer implements RequestIndexer {
 				numPendingRequestsRef.getAndIncrement();
 			}
 			this.bulkProcessor.add(updateRequest);
+		}
+	}
+
+	@Override
+	public void add(IndicesAliasesRequest... indicesAliasesRequests) {
+		for (IndicesAliasesRequest indicesAliasesRequest : indicesAliasesRequests) {
+			this.indexManager.addAlias(indicesAliasesRequest);
 		}
 	}
 }

@@ -20,6 +20,8 @@ package org.apache.flink.streaming.connectors.elasticsearch5;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchApiCallBridge;
 import org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchSinkBase;
+import org.apache.flink.streaming.connectors.elasticsearch.IndexManager;
+import org.apache.flink.streaming.connectors.elasticsearch.PreElasitcsearch6IndexManager;
 import org.apache.flink.streaming.connectors.elasticsearch.util.ElasticsearchUtils;
 import org.apache.flink.util.IOUtils;
 import org.apache.flink.util.Preconditions;
@@ -92,6 +94,11 @@ public class Elasticsearch5ApiCallBridge implements ElasticsearchApiCallBridge<T
 		} else {
 			return bulkItemResponse.getFailure().getCause();
 		}
+	}
+
+	@Override
+	public IndexManager createIndexManager(TransportClient client) {
+		return new PreElasitcsearch6IndexManager(client);
 	}
 
 	@Override

@@ -565,6 +565,12 @@ public class ElasticsearchSinkBaseTest {
 		public void verifyClientConnection(Client client) {
 			// no need for this in the test cases here
 		}
+
+		@Override
+		public IndexManager createIndexManager(Client client) {
+			// no need for this in the test cases here
+			return null;
+		}
 	}
 
 	private static class SimpleSinkFunction<String> implements ElasticsearchSinkFunction<String> {

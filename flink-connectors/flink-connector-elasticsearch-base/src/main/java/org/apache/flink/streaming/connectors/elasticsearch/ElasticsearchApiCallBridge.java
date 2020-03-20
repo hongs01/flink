@@ -62,6 +62,13 @@ public interface ElasticsearchApiCallBridge<C extends AutoCloseable> extends Ser
 	BulkProcessor.Builder createBulkProcessorBuilder(C client, BulkProcessor.Listener listener);
 
 	/**
+	 * Creates an {@link IndexManager} that used to maintain index.
+	 * @param c the Elasticsearch client.
+	 * @return the created IndexManager.
+	 */
+	IndexManager createIndexManager(C c);
+
+	/**
 	 * Extracts the cause of failure of a bulk item action.
 	 *
 	 * @param bulkItemResponse the bulk item response to extract cause of failure
@@ -96,11 +103,13 @@ public interface ElasticsearchApiCallBridge<C extends AutoCloseable> extends Ser
 	default RequestIndexer createBulkProcessorIndexer(
 			BulkProcessor bulkProcessor,
 			boolean flushOnCheckpoint,
-			AtomicLong numPendingRequestsRef) {
+			AtomicLong numPendingRequestsRef,
+			IndexManager indexManager) {
 		return new PreElasticsearch6BulkProcessorIndexer(
 			bulkProcessor,
 			flushOnCheckpoint,
-			numPendingRequestsRef);
+			numPendingRequestsRef,
+			indexManager);
 	}
 
 	/**
