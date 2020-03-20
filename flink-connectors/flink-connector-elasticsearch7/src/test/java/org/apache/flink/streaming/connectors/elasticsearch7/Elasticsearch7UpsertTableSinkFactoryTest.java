@@ -37,6 +37,7 @@ import org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchUpsertTa
 import org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchUpsertTableSinkBase.Host;
 import org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchUpsertTableSinkBase.SinkOption;
 import org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchUpsertTableSinkFactoryTestBase;
+import org.apache.flink.streaming.connectors.elasticsearch.IndexFormatter;
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.types.Row;
 
@@ -64,15 +65,16 @@ public class Elasticsearch7UpsertTableSinkFactoryTest extends ElasticsearchUpser
 		final TestElasticsearch7UpsertTableSink testSink = new TestElasticsearch7UpsertTableSink(
 			false,
 			schema,
-			Collections.singletonList(new Host(ElasticsearchUpsertTableSinkFactoryTestBase.HOSTNAME, ElasticsearchUpsertTableSinkFactoryTestBase.PORT, ElasticsearchUpsertTableSinkFactoryTestBase.SCHEMA)),
-			ElasticsearchUpsertTableSinkFactoryTestBase.INDEX,
-			ElasticsearchUpsertTableSinkFactoryTestBase.DOC_TYPE,
-			ElasticsearchUpsertTableSinkFactoryTestBase.KEY_DELIMITER,
-			ElasticsearchUpsertTableSinkFactoryTestBase.KEY_NULL_LITERAL,
+			Collections.singletonList(new Host(HOSTNAME, PORT, SCHEMA)),
+			INDEX,
+			DOC_TYPE,
+			KEY_DELIMITER,
+			KEY_NULL_LITERAL,
 			JsonRowSerializationSchema.builder().withTypeInfo(schema.toRowType()).build(),
 			XContentType.JSON,
 			new DummyFailureHandler(),
-			createTestSinkOptions());
+			createTestSinkOptions(),
+			INDEX_ALIAS);
 
 		final DataStreamMock dataStreamMock = new DataStreamMock(
 				new StreamExecutionEnvironmentMock(),
@@ -81,16 +83,22 @@ public class Elasticsearch7UpsertTableSinkFactoryTest extends ElasticsearchUpser
 		testSink.consumeDataStream(dataStreamMock);
 
 		final ElasticsearchSink.Builder<Tuple2<Boolean, Row>> expectedBuilder = new ElasticsearchSink.Builder<>(
-			Collections.singletonList(new HttpHost(ElasticsearchUpsertTableSinkFactoryTestBase.HOSTNAME, ElasticsearchUpsertTableSinkFactoryTestBase.PORT, ElasticsearchUpsertTableSinkFactoryTestBase.SCHEMA)),
+			Collections.singletonList(new HttpHost(HOSTNAME, PORT, SCHEMA)),
 			new ElasticsearchUpsertSinkFunction(
-				ElasticsearchUpsertTableSinkFactoryTestBase.INDEX,
-				ElasticsearchUpsertTableSinkFactoryTestBase.DOC_TYPE,
-				ElasticsearchUpsertTableSinkFactoryTestBase.KEY_DELIMITER,
-				ElasticsearchUpsertTableSinkFactoryTestBase.KEY_NULL_LITERAL,
+				INDEX,
+				DOC_TYPE,
+				KEY_DELIMITER,
+				KEY_NULL_LITERAL,
 				JsonRowSerializationSchema.builder().withTypeInfo(schema.toRowType()).build(),
 				XContentType.JSON,
 				Elasticsearch7UpsertTableSink.UPDATE_REQUEST_FACTORY,
-				new int[0]));
+				new int[0],
+				INDEX_ALIAS,
+				IndexFormatter.builder()
+					.index(INDEX)
+					.fieldNames(schema.getFieldNames())
+					.fieldTypes(schema.getFieldTypes())
+					.build()));
 		expectedBuilder.setFailureHandler(new DummyFailureHandler());
 		expectedBuilder.setBulkFlushBackoff(true);
 		expectedBuilder.setBulkFlushBackoffType(ElasticsearchSinkBase.FlushBackoffType.EXPONENTIAL);
@@ -121,7 +129,8 @@ public class Elasticsearch7UpsertTableSinkFactoryTest extends ElasticsearchUpser
 			SerializationSchema<Row> serializationSchema,
 			XContentType contentType,
 			ActionRequestFailureHandler failureHandler,
-			Map<SinkOption, String> sinkOptions) {
+			Map<SinkOption, String> sinkOptions,
+			String indexAlias) {
 		return new Elasticsearch7UpsertTableSink(
 			isAppendOnly,
 			schema,
@@ -132,7 +141,8 @@ public class Elasticsearch7UpsertTableSinkFactoryTest extends ElasticsearchUpser
 			serializationSchema,
 			contentType,
 			failureHandler,
-			sinkOptions);
+			sinkOptions,
+			indexAlias);
 	}
 
 	// --------------------------------------------------------------------------------------------
@@ -154,7 +164,8 @@ public class Elasticsearch7UpsertTableSinkFactoryTest extends ElasticsearchUpser
 				SerializationSchema<Row> serializationSchema,
 				XContentType contentType,
 				ActionRequestFailureHandler failureHandler,
-				Map<SinkOption, String> sinkOptions) {
+				Map<SinkOption, String> sinkOptions,
+				String indexAlias) {
 
 			super(
 				isAppendOnly,
@@ -167,7 +178,8 @@ public class Elasticsearch7UpsertTableSinkFactoryTest extends ElasticsearchUpser
 				serializationSchema,
 				contentType,
 				failureHandler,
-				sinkOptions);
+				sinkOptions,
+				indexAlias);
 		}
 
 		@Override

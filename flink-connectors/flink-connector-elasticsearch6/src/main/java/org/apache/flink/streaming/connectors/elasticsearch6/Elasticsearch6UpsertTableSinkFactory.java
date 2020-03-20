@@ -59,7 +59,8 @@ public class Elasticsearch6UpsertTableSinkFactory extends ElasticsearchUpsertTab
 			SerializationSchema<Row> serializationSchema,
 			XContentType contentType,
 			ActionRequestFailureHandler failureHandler,
-			Map<SinkOption, String> sinkOptions) {
+			Map<SinkOption, String> sinkOptions,
+			String indexAlias) {
 
 		return new Elasticsearch6UpsertTableSink(
 			isAppendOnly,
@@ -72,6 +73,7 @@ public class Elasticsearch6UpsertTableSinkFactory extends ElasticsearchUpsertTab
 			serializationSchema,
 			contentType,
 			failureHandler,
-			sinkOptions);
+			sinkOptions,
+			indexAlias);
 	}
 }

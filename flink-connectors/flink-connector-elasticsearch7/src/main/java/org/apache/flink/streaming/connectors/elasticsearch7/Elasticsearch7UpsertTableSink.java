@@ -31,6 +31,7 @@ import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.types.Row;
 
 import org.apache.http.HttpHost;
+import org.elasticsearch.action.admin.indices.alias.IndicesAliasesRequest;
 import org.elasticsearch.action.delete.DeleteRequest;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.update.UpdateRequest;
@@ -75,7 +76,8 @@ public class Elasticsearch7UpsertTableSink extends ElasticsearchUpsertTableSinkB
 			SerializationSchema<Row> serializationSchema,
 			XContentType contentType,
 			ActionRequestFailureHandler failureHandler,
-			Map<SinkOption, String> sinkOptions) {
+			Map<SinkOption, String> sinkOptions,
+			String indexAlias) {
 
 		super(
 			isAppendOnly,
@@ -89,7 +91,8 @@ public class Elasticsearch7UpsertTableSink extends ElasticsearchUpsertTableSinkB
 			contentType,
 			failureHandler,
 			sinkOptions,
-			UPDATE_REQUEST_FACTORY);
+			UPDATE_REQUEST_FACTORY,
+			indexAlias);
 	}
 
 	@VisibleForTesting
@@ -104,7 +107,8 @@ public class Elasticsearch7UpsertTableSink extends ElasticsearchUpsertTableSinkB
 		SerializationSchema<Row> serializationSchema,
 		XContentType contentType,
 		ActionRequestFailureHandler failureHandler,
-		Map<SinkOption, String> sinkOptions) {
+		Map<SinkOption, String> sinkOptions,
+		String indexAlias) {
 
 		super(
 			isAppendOnly,
@@ -118,7 +122,8 @@ public class Elasticsearch7UpsertTableSink extends ElasticsearchUpsertTableSinkB
 			contentType,
 			failureHandler,
 			sinkOptions,
-			UPDATE_REQUEST_FACTORY);
+			UPDATE_REQUEST_FACTORY,
+			indexAlias);
 	}
 
 	@Override
@@ -134,7 +139,8 @@ public class Elasticsearch7UpsertTableSink extends ElasticsearchUpsertTableSinkB
 			XContentType contentType,
 			ActionRequestFailureHandler failureHandler,
 			Map<SinkOption, String> sinkOptions,
-			RequestFactory requestFactory) {
+			RequestFactory requestFactory,
+			String indexAlias) {
 
 		return new Elasticsearch7UpsertTableSink(
 			isAppendOnly,
@@ -146,7 +152,8 @@ public class Elasticsearch7UpsertTableSink extends ElasticsearchUpsertTableSinkB
 			serializationSchema,
 			contentType,
 			failureHandler,
-			sinkOptions);
+			sinkOptions,
+			indexAlias);
 	}
 
 	@Override
@@ -278,6 +285,12 @@ public class Elasticsearch7UpsertTableSink extends ElasticsearchUpsertTableSinkB
 		@Override
 		public DeleteRequest createDeleteRequest(String index, String docType, String key) {
 			return new DeleteRequest(index, key);
+		}
+
+		@Override
+		public IndicesAliasesRequest createIndicesAliasesRequest(String index, String alias) {
+			return new IndicesAliasesRequest().addAliasAction(
+				IndicesAliasesRequest.AliasActions.add().index(index).alias(alias));
 		}
 	}
 }

@@ -57,6 +57,7 @@ public abstract class ElasticsearchUpsertTableSinkFactoryTestBase extends TestLo
 	protected static final String DOC_TYPE = "MyType";
 	protected static final String KEY_DELIMITER = "#";
 	protected static final String KEY_NULL_LITERAL = "";
+	protected static final String INDEX_ALIAS = "myAlias";
 
 	private static final String FIELD_KEY = "key";
 	private static final String FIELD_FRUIT_NAME = "fruit_name";
@@ -80,7 +81,8 @@ public abstract class ElasticsearchUpsertTableSinkFactoryTestBase extends TestLo
 			JsonRowSerializationSchema.builder().withTypeInfo(schema.toRowType()).build(),
 			XContentType.JSON,
 			new DummyFailureHandler(),
-			createTestSinkOptions());
+			createTestSinkOptions(),
+			INDEX_ALIAS);
 
 		// construct table sink using descriptors and table sink factory
 		final Map<String, String> elasticSearchProperties = createElasticSearchProperties();
@@ -106,7 +108,8 @@ public abstract class ElasticsearchUpsertTableSinkFactoryTestBase extends TestLo
 			JsonRowSerializationSchema.builder().withTypeInfo(schema.toRowType()).build(),
 			XContentType.JSON,
 			new DummyFailureHandler(),
-			createTestSinkOptions());
+			createTestSinkOptions(),
+			INDEX_ALIAS);
 
 		// construct table sink using descriptors and table sink factory
 		final Map<String, String> elasticSearchProperties = createElasticSearchProperties();
@@ -166,7 +169,8 @@ public abstract class ElasticsearchUpsertTableSinkFactoryTestBase extends TestLo
 				.bulkFlushMaxSize("1 MB")
 				.failureHandlerCustom(DummyFailureHandler.class)
 				.connectionMaxRetryTimeout(100)
-				.connectionPathPrefix("/myapp"))
+				.connectionPathPrefix("/myapp")
+				.indexAlias(INDEX_ALIAS))
 			.withFormat(
 				new Json()
 					.deriveSchema())
@@ -197,7 +201,8 @@ public abstract class ElasticsearchUpsertTableSinkFactoryTestBase extends TestLo
 		SerializationSchema<Row> serializationSchema,
 		XContentType contentType,
 		ActionRequestFailureHandler failureHandler,
-		Map<SinkOption, String> sinkOptions);
+		Map<SinkOption, String> sinkOptions,
+		String indexAlias);
 
 	// --------------------------------------------------------------------------------------------
 	// Helper classes

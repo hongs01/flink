@@ -107,6 +107,7 @@ public abstract class ElasticsearchUpsertTableSinkFactoryBase implements StreamT
 	private static final String DEFAULT_KEY_DELIMITER = "_";
 	private static final String DEFAULT_KEY_NULL_LITERAL = "null";
 	private static final String DEFAULT_FAILURE_HANDLER = CONNECTOR_FAILURE_HANDLER_VALUE_FAIL;
+	private static final String UNDEFINED_INDEX_ALIAS = "";
 
 	@Override
 	public Map<String, String> requiredContext() {
@@ -179,7 +180,8 @@ public abstract class ElasticsearchUpsertTableSinkFactoryBase implements StreamT
 			getSerializationSchema(properties),
 			SUPPORTED_CONTENT_TYPE,
 			getFailureHandler(descriptorProperties),
-			getSinkOptions(descriptorProperties));
+			getSinkOptions(descriptorProperties),
+			descriptorProperties.getOptionalString(CONNECTOR_INDEX_ALIAS).orElse(UNDEFINED_INDEX_ALIAS));
 	}
 
 	// --------------------------------------------------------------------------------------------
@@ -199,7 +201,8 @@ public abstract class ElasticsearchUpsertTableSinkFactoryBase implements StreamT
 		SerializationSchema<Row> serializationSchema,
 		XContentType contentType,
 		ActionRequestFailureHandler failureHandler,
-		Map<SinkOption, String> sinkOptions);
+		Map<SinkOption, String> sinkOptions,
+		String indexAlias);
 
 	// --------------------------------------------------------------------------------------------
 	// Helper methods
@@ -275,8 +278,6 @@ public abstract class ElasticsearchUpsertTableSinkFactoryBase implements StreamT
 
 		descriptorProperties.getOptionalBoolean(CONNECTOR_FLUSH_ON_CHECKPOINT)
 			.ifPresent(v -> options.put(SinkOption.DISABLE_FLUSH_ON_CHECKPOINT, String.valueOf(!v)));
-		descriptorProperties.getOptionalString(CONNECTOR_INDEX_ALIAS)
-			.ifPresent(v -> options.put(SinkOption.INDEX_ALIAS, v));
 
 		mapSinkOption(descriptorProperties, options, CONNECTOR_BULK_FLUSH_MAX_ACTIONS, SinkOption.BULK_FLUSH_MAX_ACTIONS);
 		mapSinkOption(descriptorProperties, options, CONNECTOR_BULK_FLUSH_MAX_SIZE, SinkOption.BULK_FLUSH_MAX_SIZE);

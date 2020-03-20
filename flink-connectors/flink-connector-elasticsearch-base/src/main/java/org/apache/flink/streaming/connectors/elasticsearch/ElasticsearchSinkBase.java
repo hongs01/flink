@@ -203,6 +203,11 @@ public abstract class ElasticsearchSinkBase<T, C extends AutoCloseable> extends 
 	 */
 	private final AtomicReference<Throwable> failureThrowable = new AtomicReference<>();
 
+	/**
+	 * Manager to manage index and alias.
+	 */
+	private transient IndexManager indexManager;
+
 	public ElasticsearchSinkBase(
 		ElasticsearchApiCallBridge<C> callBridge,
 		Map<String, String> userConfig,
@@ -300,7 +305,8 @@ public abstract class ElasticsearchSinkBase<T, C extends AutoCloseable> extends 
 		client = callBridge.createClient(userConfig);
 		callBridge.verifyClientConnection(client);
 		bulkProcessor = buildBulkProcessor(new BulkProcessorListener());
-		requestIndexer = callBridge.createBulkProcessorIndexer(bulkProcessor, flushOnCheckpoint, numPendingRequests);
+		indexManager = callBridge.createIndexManager(client);
+		requestIndexer = callBridge.createBulkProcessorIndexer(bulkProcessor, flushOnCheckpoint, numPendingRequests, indexManager);
 		failureRequestIndexer = new BufferingNoOpRequestIndexer();
 	}
 
