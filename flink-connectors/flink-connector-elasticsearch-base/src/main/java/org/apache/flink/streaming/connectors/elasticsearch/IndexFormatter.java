@@ -54,25 +54,21 @@ public class IndexFormatter implements Serializable {
 
 	private static final Pattern dynamicIndexPattern = Pattern.compile(".*\\{.+\\}.*");
 	private static final Pattern dynamicIndexTimeExtractPattern = Pattern.compile(".*\\{.+\\|.*\\}.*");
-	private static final String DEFAULT_FORMAT = "yyyy-MM-dd";
 
-	private String index;
-	private boolean dynamicIndexEnabled;
-	private boolean dynamicIndexTimeExtractEnabled;
-	private String dynamicIndexPatternStr;
-
-	private int indexFieldPos;
-	private TypeInformation indexFieldType;
-	private SimpleDateFormat dateFormat;
+	private final String index;
+	private final String[] fieldNames;
+	private final TypeInformation<?>[] fieldTypes;
+	private final boolean dynamicIndexEnabled;
+	private final boolean dynamicIndexTimeExtractEnabled;
+	private final IndexRuntimeConverter indexRuntimeConverter;
 
 	IndexFormatter(String index, String[] fieldNames, TypeInformation<?>[] fieldTypes) {
 		this.index = index;
+		this.fieldNames = fieldNames;
+		this.fieldTypes = fieldTypes;
 		this.dynamicIndexEnabled = checkDynamicIndexEnabled();
-		this.dynamicIndexPatternStr = extractDynamicIndexPatternStr();
 		this.dynamicIndexTimeExtractEnabled = checkDynamicIndexTimeExtractEnabled();
-		this.indexFieldPos = extractIndexFieldPos(fieldNames);
-		this.indexFieldType = extractIndexFieldType(fieldTypes);
-		this.dateFormat = extractDateFormat();
+		this.indexRuntimeConverter = createIndexRuntimeConverter();
 	}
 
 	/**
@@ -82,6 +78,10 @@ public class IndexFormatter implements Serializable {
 		private String index;
 		private String[] fieldNames;
 		private TypeInformation<?>[] fieldTypes;
+
+		private Builder() {
+			// private constructor
+		}
 
 		public Builder index(String index) {
 			this.index = index;
@@ -118,25 +118,7 @@ public class IndexFormatter implements Serializable {
 	 * Return dynamic index if dynamic index is enabled, else return the static index.
 	 */
 	public String getFormattedIndex(Row row) {
-		if (!isDynamicIndexEnabled()) {
-			return index;
-		}
-		Object indexFiled = row.getField(indexFieldPos);
-		String indexFiledValueStr = indexFiled.toString();
-
-		if (dynamicIndexTimeExtractEnabled) {
-			if (indexFieldType == Types.LONG) {
-				indexFiledValueStr = dateFormat.format(new Date((Long) indexFiled));
-			} else if (indexFieldType == Types.SQL_TIMESTAMP) {
-				indexFiledValueStr = dateFormat.format((Timestamp) indexFiled);
-			} else if (indexFieldType == Types.SQL_DATE) {
-				indexFiledValueStr = dateFormat.format((Date) indexFiled);
-			} else {
-				throw new TableException(String.format("Unsupported type '%s' found in Elasticsearch dynamic index column:, " +
-					"extract time-related pattern only support type 'LONG'、'SQL_TIMESTAMP' and 'SQL_DATE'.", indexFieldType));
-			}
-		}
-		return StringUtils.replace(index, dynamicIndexPatternStr, indexFiledValueStr);
+		return indexRuntimeConverter.convert(row);
 	}
 
 	/**
@@ -193,21 +175,57 @@ public class IndexFormatter implements Serializable {
 	}
 
 	/**
-	 * Extract index field type.
+	 * Extract {@link SimpleDateFormat} by the date format that extracted from index pattern string.
 	 */
-	private TypeInformation<?> extractIndexFieldType(TypeInformation<?>[] fieldTypes) {
-		return fieldTypes[this.indexFieldPos];
+	private String extractDateFormat() {
+		return  StringUtils.substringBetween(index, "|", "}");
 	}
 
 	/**
-	 * Extract {@link SimpleDateFormat} by the date format that extracted from index pattern string.
+	 * Runtime converter that converts the index field to string.
 	 */
-	private SimpleDateFormat extractDateFormat() {
-		String format = DEFAULT_FORMAT;
-		if (dynamicIndexTimeExtractEnabled) {
-			format = StringUtils.substringBetween(index, "|", "}");
+	@FunctionalInterface
+	private interface IndexRuntimeConverter {
+		String convert(Row row);
+	}
+
+	private IndexRuntimeConverter createIndexRuntimeConverter() {
+		final String dynamicIndexPatternStr = extractDynamicIndexPatternStr();
+
+		if (dynamicIndexEnabled) {
+			final int indexFieldPos = extractIndexFieldPos(fieldNames);
+			// time extract dynamic index pattern
+			if (dynamicIndexTimeExtractEnabled) {
+				final TypeInformation<?>indexFieldType = fieldTypes[indexFieldPos];
+				final String dateFormatStr = extractDateFormat();
+				return (row) -> {
+					Object indexFiled = row.getField(indexFieldPos);
+					String indexFiledValueStr;
+					SimpleDateFormat dateFormat = new SimpleDateFormat(dateFormatStr);
+
+					if (indexFieldType == Types.LONG) {
+						indexFiledValueStr = dateFormat.format(new Date((Long) indexFiled));
+					} else if (indexFieldType == Types.SQL_TIMESTAMP) {
+						indexFiledValueStr = dateFormat.format((Timestamp) indexFiled);
+					} else if (indexFieldType == Types.SQL_DATE) {
+						indexFiledValueStr = dateFormat.format((Date) indexFiled);
+					} else {
+						throw new TableException(String.format("Unsupported type '%s' found in Elasticsearch dynamic index column:, " +
+							"extract time-related pattern only support type 'LONG'、'SQL_TIMESTAMP' and 'SQL_DATE'.", indexFieldType));
+					}
+
+					return StringUtils.replace(index, dynamicIndexPatternStr, indexFiledValueStr);
+				};
+			}
+
+			// general dynamic index pattern
+			return (row) -> {
+				Object indexFiled = row.getField(indexFieldPos);
+				return StringUtils.replace(index, dynamicIndexPatternStr, indexFiled.toString());
+			};
 		}
-		return new SimpleDateFormat(format);
+		// static index
+		return (row) -> index;
 	}
 
 	@Override
@@ -219,17 +237,16 @@ public class IndexFormatter implements Serializable {
 			return false;
 		}
 		IndexFormatter that = (IndexFormatter) o;
-		return dynamicIndexEnabled == that.dynamicIndexEnabled &&
-			dynamicIndexTimeExtractEnabled == that.dynamicIndexTimeExtractEnabled &&
-			indexFieldPos == that.indexFieldPos &&
-			Objects.equals(index, that.index) &&
-			Objects.equals(dynamicIndexPatternStr, that.dynamicIndexPatternStr) &&
-			Objects.equals(indexFieldType, that.indexFieldType) &&
-			Objects.equals(dateFormat, that.dateFormat);
+		return index.equals(that.index) &&
+			Arrays.equals(fieldNames, that.fieldNames) &&
+			Arrays.equals(fieldTypes, that.fieldTypes);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(index, dynamicIndexEnabled, dynamicIndexTimeExtractEnabled, dynamicIndexPatternStr, indexFieldPos, indexFieldType, dateFormat);
+		int result = Objects.hash(index);
+		result = 31 * result + Arrays.hashCode(fieldNames);
+		result = 31 * result + Arrays.hashCode(fieldTypes);
+		return result;
 	}
 }
