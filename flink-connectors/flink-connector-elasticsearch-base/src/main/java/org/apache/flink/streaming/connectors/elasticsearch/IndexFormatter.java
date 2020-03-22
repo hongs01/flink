@@ -198,24 +198,31 @@ public class IndexFormatter implements Serializable {
 			if (dynamicIndexTimeExtractEnabled) {
 				final TypeInformation<?>indexFieldType = fieldTypes[indexFieldPos];
 				final String dateFormatStr = extractDateFormat();
-				return (row) -> {
-					Object indexFiled = row.getField(indexFieldPos);
-					String indexFiledValueStr;
-					SimpleDateFormat dateFormat = new SimpleDateFormat(dateFormatStr);
-
-					if (indexFieldType == Types.LONG) {
-						indexFiledValueStr = dateFormat.format(new Date((Long) indexFiled));
-					} else if (indexFieldType == Types.SQL_TIMESTAMP) {
-						indexFiledValueStr = dateFormat.format((Timestamp) indexFiled);
-					} else if (indexFieldType == Types.SQL_DATE) {
-						indexFiledValueStr = dateFormat.format((Date) indexFiled);
-					} else {
-						throw new TableException(String.format("Unsupported type '%s' found in Elasticsearch dynamic index column:, " +
-							"extract time-related pattern only support type 'LONG'、'SQL_TIMESTAMP' and 'SQL_DATE'.", indexFieldType));
-					}
-
-					return StringUtils.replace(index, dynamicIndexPatternStr, indexFiledValueStr);
-				};
+				if (indexFieldType == Types.LONG) {
+					return (row) -> {
+						Object indexFiled = row.getField(indexFieldPos);
+						SimpleDateFormat dateFormat = new SimpleDateFormat(dateFormatStr);
+						String indexFiledValueStr = dateFormat.format(new Date((Long) indexFiled));
+						return StringUtils.replace(index, dynamicIndexPatternStr, indexFiledValueStr);
+					};
+				} else if (indexFieldType == Types.SQL_TIMESTAMP) {
+					return (row) -> {
+						Object indexFiled = row.getField(indexFieldPos);
+						SimpleDateFormat dateFormat = new SimpleDateFormat(dateFormatStr);
+						String indexFiledValueStr = dateFormat.format((Timestamp) indexFiled);
+						return StringUtils.replace(index, dynamicIndexPatternStr, indexFiledValueStr);
+					};
+				} else if (indexFieldType == Types.SQL_DATE) {
+					return (row) -> {
+						Object indexFiled = row.getField(indexFieldPos);
+						SimpleDateFormat dateFormat = new SimpleDateFormat(dateFormatStr);
+						String indexFiledValueStr = dateFormat.format((Date) indexFiled);
+						return StringUtils.replace(index, dynamicIndexPatternStr, indexFiledValueStr);
+					};
+				} else {
+					throw new TableException(String.format("Unsupported type '%s' found in Elasticsearch dynamic index column:, " +
+						"extract time-related pattern only support type 'LONG'、'SQL_TIMESTAMP' and 'SQL_DATE'.", indexFieldType));
+				}
 			}
 
 			// general dynamic index pattern
