@@ -927,13 +927,12 @@ CREATE TABLE MyUserTable (
   
   'connector.hosts' = 'http://host_name:9092;http://host_name:9093',  -- required: one or more Elasticsearch hosts to connect to
 
-  'connector.index' = 'MyUsers',       -- required: Elasticsearch index, Flink support create index based on field
+  'connector.index' = 'myusers',       -- required: Elasticsearch index, Flink support create index based on field
                                        -- at runtime dynamically, the index value comes from the dynamic index 
-                                       -- pattern when the field type is VARCHAR, eg:'MyUsers-{log_source}',
-                                       -- 'log_source' is a VARCHAR column, the dynamicIndex pattern support format
-                                       -- and parse date by Java SimpleDataFormat when the field type is 
-                                       -- SQL_TIMESTAMP/SQL_DATE/LONG, eg:'MyUsers-{log_ts|yyyy-MM-dd}','log_ts' is
-                                       -- a SQL_TIMESTAMP/SQL_DATE/LONG column.
+                                       -- pattern like 'myusers-{log_source}', 'log_source' is a column name of table,
+                                       -- the dynamicIndex pattern also support format time by Java DateFormatter 
+                                       -- when the column DataType is BIGINT/SQL_TIMESTAMP/SQL_DATE, eg:
+                                       -- 'myusers-{log_ts|yyyy-MM-dd}', 'log_ts' is a BIGINT/SQL_TIMESTAMP/SQL_DATE column.
 
 
   'connector.document-type' = 'user',  -- required: Elasticsearch document type

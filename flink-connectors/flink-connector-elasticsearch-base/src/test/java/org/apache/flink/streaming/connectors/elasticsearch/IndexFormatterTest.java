@@ -29,6 +29,8 @@ import org.junit.Test;
 
 import java.sql.Date;
 import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -42,13 +44,15 @@ public class IndexFormatterTest {
 
 	@Before
 	public void prepareData() {
-		fieldNames = new String[]{"id", "item", "log_ts", "log_date", "order_timestamp", "note"};
+		fieldNames = new String[]{"id", "item", "log_ts", "log_date", "order_timestamp", "local_datetime", "local_date", "note"};
 		fieldTypes = new TypeInformation[] {
 			Types.INT,
 			Types.STRING,
 			Types.LONG,
 			Types.SQL_DATE,
 			Types.SQL_TIMESTAMP,
+			Types.LOCAL_DATE_TIME,
+			Types.LOCAL_DATE,
 			Types.STRING
 		};
 		rows = new ArrayList<>();
@@ -58,13 +62,17 @@ public class IndexFormatterTest {
 			Timestamp.valueOf("2020-03-18 12:12:14").getTime(),
 			Date.valueOf("2020-03-18"),
 			Timestamp.valueOf("2020-03-18 12:12:14"),
+			LocalDateTime.of(2020, 3, 18, 12, 12, 14, 1000),
+			LocalDate.of(2020, 3, 18),
 			"test1"));
 		rows.add(Row.of(
 			2,
 			"peanut",
-			Timestamp.valueOf("2020-03-19 12:12:14").getTime(),
+			Timestamp.valueOf("2020-03-19 12:22:14").getTime(),
 			Date.valueOf("2020-03-19"),
 			Timestamp.valueOf("2020-03-19 12:22:21"),
+			LocalDateTime.of(2020, 3, 19, 12, 22, 14, 1000),
+			LocalDate.of(2020, 3, 19),
 			"test2"));
 	}
 
@@ -97,7 +105,23 @@ public class IndexFormatterTest {
 			.fieldNames(fieldNames)
 			.fieldTypes(fieldTypes)
 			.build();
-		Assert.assertEquals("2020_03_18_12_12_index", indexFormatter1.getFormattedIndex(rows.get(0)));
+		Assert.assertEquals("2020_03_19_12_22_index", indexFormatter1.getFormattedIndex(rows.get(1)));
+	}
+
+	@Test
+	public void testDynamicIndexFromLocalDateTime() {
+		IndexFormatter indexFormatter = IndexFormatter.builder()
+			.index("{local_datetime|yyyy_MM_dd_HH-ss}_index")
+			.fieldNames(fieldNames)
+			.fieldTypes(fieldTypes)
+			.build();
+		Assert.assertEquals("2020_03_18_12-14_index", indexFormatter.getFormattedIndex(rows.get(0)));
+		IndexFormatter indexFormatter1 = IndexFormatter.builder()
+			.index("{local_datetime|yyyy_MM_dd_HH_mm}_index")
+			.fieldNames(fieldNames)
+			.fieldTypes(fieldTypes)
+			.build();
+		Assert.assertEquals("2020_03_19_12_22_index", indexFormatter1.getFormattedIndex(rows.get(1)));
 	}
 
 	@Test
@@ -114,13 +138,23 @@ public class IndexFormatterTest {
 	@Test
 	public void testDynamicIndexFromDate() {
 		IndexFormatter indexFormatter = IndexFormatter.builder()
-			.index("my-index-{log_date|yyyy/MM/dd/HH}")
+			.index("my-index-{log_date|yyyy/MM/dd}")
 			.fieldNames(fieldNames)
 			.fieldTypes(fieldTypes)
 			.build();
-		Assert.assertEquals("my-index-2020/03/18/00", indexFormatter.getFormattedIndex(rows.get(0)));
-		Assert.assertEquals("my-index-2020/03/19/00", indexFormatter.getFormattedIndex(rows.get(1)));
+		Assert.assertEquals("my-index-2020/03/18", indexFormatter.getFormattedIndex(rows.get(0)));
+		Assert.assertEquals("my-index-2020/03/19", indexFormatter.getFormattedIndex(rows.get(1)));
+	}
 
+	@Test
+	public void testDynamicIndexFromLocalDate() {
+		IndexFormatter indexFormatter = IndexFormatter.builder()
+			.index("my-index-{local_date|yyyy/MM/dd}")
+			.fieldNames(fieldNames)
+			.fieldTypes(fieldTypes)
+			.build();
+		Assert.assertEquals("my-index-2020/03/18", indexFormatter.getFormattedIndex(rows.get(0)));
+		Assert.assertEquals("my-index-2020/03/19", indexFormatter.getFormattedIndex(rows.get(1)));
 	}
 
 	@Test
@@ -167,5 +201,4 @@ public class IndexFormatterTest {
 		Assert.assertTrue(indexFormatter.isDynamicIndexEnabled());
 		Assert.assertEquals("my-index", indexFormatter.getFormattedIndex(rows.get(0)));
 	}
-
 }

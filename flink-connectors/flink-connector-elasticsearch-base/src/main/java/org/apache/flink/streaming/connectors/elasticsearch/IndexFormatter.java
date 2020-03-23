@@ -24,12 +24,14 @@ import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.table.api.TableException;
 import org.apache.flink.types.Row;
 
-import org.apache.commons.lang3.StringUtils;
-
 import java.io.Serializable;
 import java.sql.Date;
 import java.sql.Timestamp;
-import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -42,11 +44,11 @@ import java.util.regex.Pattern;
  * 'connector.index'='my-index-{item}' and time extract pattern like 'connector.index'='my-index-{log_ts|yyyy-MM-dd}'.
  *
  * <p>For general pattern:
- * 'item' the index field comes from any type column.
+ * 'item' is the index field comes from any DataType column.
  *
  * <p>For time extract pattern:
- * 'log_ts' is the index field comes from a varchar/timestamp column.
- * 'yyyy-MM-dd' is the date format follows the {@link SimpleDateFormat} syntax.
+ * 'log_ts' is the index field comes from a BIGINT/SQL_TIMESTAMP/SQL_DATE column.
+ * 'yyyy-MM-dd' is the date format follows the {@link DateTimeFormatter} syntax.
  * '{log_ts|yyyy-MM-dd}' is the time extract pattern for index in a dynamic index pattern.
  */
 @Internal
@@ -141,13 +143,9 @@ public class IndexFormatter implements Serializable {
 	private String extractDynamicIndexPatternStr() {
 		String dynamicIndexPatternStr = null;
 		if (dynamicIndexEnabled) {
-			int start = StringUtils.indexOf(index, "{");
-			int end = StringUtils.lastIndexOf(index, "}");
-			if (end == index.length() - 1) {
-				dynamicIndexPatternStr =  StringUtils.substring(index, start);
-			} else {
-				dynamicIndexPatternStr =  StringUtils.substring(index, start, end + 1);
-			}
+			int start = index.indexOf("{");
+			int end = index.lastIndexOf("}");
+			dynamicIndexPatternStr = index.substring(start, end + 1);
 		}
 		return dynamicIndexPatternStr;
 	}
@@ -161,9 +159,9 @@ public class IndexFormatter implements Serializable {
 			List<String> fieldList = Arrays.asList(fieldNames);
 			String indexFieldName;
 			if (dynamicIndexTimeExtractEnabled) {
-				indexFieldName = StringUtils.substringBetween(index, "{", "|");
+				indexFieldName = index.substring(index.indexOf("{") + 1, index.indexOf("|"));
 			} else {
-				indexFieldName = StringUtils.substringBetween(index, "{", "}");
+				indexFieldName = index.substring(index.indexOf("{") + 1, index.indexOf("}"));
 			}
 			if (!fieldList.contains(indexFieldName)) {
 				throw new TableException(String.format("Unknown column '%s' in index pattern '%s', please check the column name.",
@@ -175,17 +173,18 @@ public class IndexFormatter implements Serializable {
 	}
 
 	/**
-	 * Extract {@link SimpleDateFormat} by the date format that extracted from index pattern string.
+	 * Extract {@link DateTimeFormatter} by the date format that extracted from index pattern string.
 	 */
-	private String extractDateFormat() {
-		return  StringUtils.substringBetween(index, "|", "}");
+	private DateTimeFormatter extractDateFormat() {
+		String pattern = index.substring(index.indexOf("|") + 1, index.indexOf("}"));
+		return DateTimeFormatter.ofPattern(pattern);
 	}
 
 	/**
 	 * Runtime converter that converts the index field to string.
 	 */
 	@FunctionalInterface
-	private interface IndexRuntimeConverter {
+	private interface IndexRuntimeConverter extends Serializable{
 		String convert(Row row);
 	}
 
@@ -197,38 +196,57 @@ public class IndexFormatter implements Serializable {
 			// time extract dynamic index pattern
 			if (dynamicIndexTimeExtractEnabled) {
 				final TypeInformation<?>indexFieldType = fieldTypes[indexFieldPos];
-				final String dateFormatStr = extractDateFormat();
+				// DataTypes.LONG
 				if (indexFieldType == Types.LONG) {
 					return (row) -> {
-						Object indexFiled = row.getField(indexFieldPos);
-						SimpleDateFormat dateFormat = new SimpleDateFormat(dateFormatStr);
-						String indexFiledValueStr = dateFormat.format(new Date((Long) indexFiled));
-						return StringUtils.replace(index, dynamicIndexPatternStr, indexFiledValueStr);
+						Long indexFiled = (Long) row.getField(indexFieldPos);
+						DateTimeFormatter dateFormat = extractDateFormat();
+						String indexFiledValueStr = LocalDateTime.ofInstant(
+							Instant.ofEpochMilli(indexFiled), ZoneId.systemDefault()).format(dateFormat);
+						return index.replace(dynamicIndexPatternStr, indexFiledValueStr);
+					};
+				}
+				// DataTypes.SQL_TIMESTAMP
+				else if (indexFieldType == Types.LOCAL_DATE_TIME) {
+					return (row) -> {
+						String indexFiled = row.getField(indexFieldPos).toString();
+						DateTimeFormatter dateFormat = extractDateFormat();
+						String indexFiledValueStr = LocalDateTime.parse(indexFiled).format(dateFormat);
+						return index.replace(dynamicIndexPatternStr, indexFiledValueStr);
 					};
 				} else if (indexFieldType == Types.SQL_TIMESTAMP) {
 					return (row) -> {
-						Object indexFiled = row.getField(indexFieldPos);
-						SimpleDateFormat dateFormat = new SimpleDateFormat(dateFormatStr);
-						String indexFiledValueStr = dateFormat.format((Timestamp) indexFiled);
-						return StringUtils.replace(index, dynamicIndexPatternStr, indexFiledValueStr);
+						String indexFiled = row.getField(indexFieldPos).toString();
+						DateTimeFormatter dateFormat = extractDateFormat();
+						String indexFiledValueStr = Timestamp.valueOf(indexFiled).toLocalDateTime().format(dateFormat);
+						return index.replace(dynamicIndexPatternStr, indexFiledValueStr);
+					};
+				}
+				// DataTypes.SQL_DATE
+				else if (indexFieldType == Types.LOCAL_DATE) {
+					return (row) -> {
+						String indexFiled = row.getField(indexFieldPos).toString();
+						DateTimeFormatter dateFormat = extractDateFormat();
+						String indexFiledValueStr = LocalDate.parse(indexFiled).format(dateFormat);
+						return index.replace(dynamicIndexPatternStr, indexFiledValueStr);
 					};
 				} else if (indexFieldType == Types.SQL_DATE) {
 					return (row) -> {
-						Object indexFiled = row.getField(indexFieldPos);
-						SimpleDateFormat dateFormat = new SimpleDateFormat(dateFormatStr);
-						String indexFiledValueStr = dateFormat.format((Date) indexFiled);
-						return StringUtils.replace(index, dynamicIndexPatternStr, indexFiledValueStr);
+						String indexFiled = row.getField(indexFieldPos).toString();
+						DateTimeFormatter dateFormat = extractDateFormat();
+						String indexFiledValueStr = Date.valueOf(indexFiled).toLocalDate().format(dateFormat);
+						return index.replace(dynamicIndexPatternStr, indexFiledValueStr);
 					};
 				} else {
-					throw new TableException(String.format("Unsupported type '%s' found in Elasticsearch dynamic index column:, " +
-						"extract time-related pattern only support type 'LONG'、'SQL_TIMESTAMP' and 'SQL_DATE'.", indexFieldType));
+					throw new TableException(String.format("Unsupported DataType '%s' found in Elasticsearch dynamic index column:, " +
+						"extract time-related pattern only support DataType 'BIGINT'、'SQL_TIMESTAMP' and 'SQL_DATE'.", indexFieldType));
 				}
 			}
 
 			// general dynamic index pattern
 			return (row) -> {
 				Object indexFiled = row.getField(indexFieldPos);
-				return StringUtils.replace(index, dynamicIndexPatternStr, indexFiled.toString());
+				return index.replace(dynamicIndexPatternStr, indexFiled.toString());
 			};
 		}
 		// static index
