@@ -95,6 +95,8 @@ public class DescriptorProperties {
 
 	public static final String WATERMARK_STRATEGY_DATA_TYPE = "strategy.data-type";
 
+	public static final String PARTITION_KEYS = "partition.keys";
+
 	private static final Consumer<String> EMPTY_CONSUMER = (value) -> {};
 
 	private final boolean normalizeKeys;

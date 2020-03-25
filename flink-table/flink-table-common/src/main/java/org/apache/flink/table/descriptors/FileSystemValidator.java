@@ -29,6 +29,9 @@ public class FileSystemValidator extends ConnectorDescriptorValidator {
 	public static final String CONNECTOR_TYPE_VALUE = "filesystem";
 	public static final String CONNECTOR_PATH = "connector.path";
 
+	public static final String CONNECTOR_SINK_STREAMING_ENABLE =
+			"connector.sink.streaming-mode.enable";
+
 	@Override
 	public void validate(DescriptorProperties properties) {
 		super.validate(properties);
