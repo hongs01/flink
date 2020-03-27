@@ -37,7 +37,7 @@ import org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchUpsertTa
 import org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchUpsertTableSinkBase.Host;
 import org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchUpsertTableSinkBase.SinkOption;
 import org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchUpsertTableSinkFactoryTestBase;
-import org.apache.flink.streaming.connectors.elasticsearch.IndexFormatter;
+import org.apache.flink.streaming.connectors.elasticsearch.IndexGeneratorFactory;
 import org.apache.flink.streaming.connectors.elasticsearch6.Elasticsearch6UpsertTableSink.DefaultRestClientFactory;
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.types.Row;
@@ -93,11 +93,10 @@ public class Elasticsearch6UpsertTableSinkFactoryTest extends ElasticsearchUpser
 				XContentType.JSON,
 				Elasticsearch6UpsertTableSink.UPDATE_REQUEST_FACTORY,
 				new int[0],
-				IndexFormatter.builder()
-					.index(INDEX)
-					.fieldNames(schema.getFieldNames())
-					.fieldTypes(schema.getFieldTypes())
-					.build()));
+				IndexGeneratorFactory.createIndexGenerator(
+					INDEX,
+					schema.getFieldNames(),
+					schema.getFieldTypes())));
 		expectedBuilder.setFailureHandler(new DummyFailureHandler());
 		expectedBuilder.setBulkFlushBackoff(true);
 		expectedBuilder.setBulkFlushBackoffType(ElasticsearchSinkBase.FlushBackoffType.EXPONENTIAL);

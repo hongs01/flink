@@ -927,13 +927,17 @@ CREATE TABLE MyUserTable (
   
   'connector.hosts' = 'http://host_name:9092;http://host_name:9093',  -- required: one or more Elasticsearch hosts to connect to
 
-  'connector.index' = 'myusers',       -- required: Elasticsearch index, Flink support create index based on field
-                                       -- at runtime dynamically, the index value comes from the dynamic index 
-                                       -- pattern like 'myusers-{log_source}', 'log_source' is a column name of table,
-                                       -- the dynamicIndex pattern also support format time by Java DateFormatter 
-                                       -- when the column DataType is BIGINT/SQL_TIMESTAMP/SQL_DATE, eg:
-                                       -- 'myusers-{log_ts|yyyy-MM-dd}', 'log_ts' is a BIGINT/SQL_TIMESTAMP/SQL_DATE column.
-
+  'connector.index' = 'myusers',       -- required: Elasticsearch index. Flink supports both static index and dynamic index.
+                                       -- If you want to have a static index, this option value should be a plain string, 
+                                       -- e.g. 'myusers', all the records will be consistently written into "myusers" index.
+                                       -- If you want to have a dynamic index, you can use '{field_name}' to reference a field
+                                       -- value in the record to dynamically generate a target index. You can also use 
+                                       -- '{field_name|date_format_string}' to convert a field value of TIMESTAMP/DATE type
+                                       -- into the format specified by date_format_string. The date_format_string is 
+                                       -- compatible with Java's [SimpleDateFormat](https://docs.oracle.com/javase/8/docs/api/java/text/SimpleDateFormat.html).
+                                       -- For example, if the option value is 'myusers-{log_ts|yyyy-MM-dd}', then a 
+                                       -- record with log_ts field value 2020-03-27 12:25:55 will be written into 
+                                       -- "myusers-2020-03-27" index.
 
   'connector.document-type' = 'user',  -- required: Elasticsearch document type
 
