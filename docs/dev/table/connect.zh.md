@@ -932,7 +932,7 @@ CREATE TABLE MyUserTable (
                                        -- e.g. 'myusers', all the records will be consistently written into "myusers" index.
                                        -- If you want to have a dynamic index, you can use '{field_name}' to reference a field
                                        -- value in the record to dynamically generate a target index. You can also use 
-                                       -- '{field_name|date_format_string}' to convert a field value of TIMESTAMP/DATE type
+                                       -- '{field_name|date_format_string}' to convert a field value of TIMESTAMP/DATE/TIME type
                                        -- into the format specified by date_format_string. The date_format_string is 
                                        -- compatible with Java's [SimpleDateFormat](https://docs.oracle.com/javase/8/docs/api/java/text/SimpleDateFormat.html).
                                        -- For example, if the option value is 'myusers-{log_ts|yyyy-MM-dd}', then a 

@@ -188,7 +188,7 @@ public class IndexGeneratorTest {
 
 	@Test
 	public void testUnSupportedType() {
-		String expectedExceptionMsg = "Unsupported DataType 'Integer' found in Elasticsearch dynamic index column:, extract time-related pattern only support DataType 'SQL_TIMESTAMP' and 'SQL_DATE'.";
+		String expectedExceptionMsg = "Unsupported DataType 'Integer' found in Elasticsearch dynamic index column:, extract time-related pattern only support DataType 'TIMESTAMP', 'DATE' and 'TIME'.";
 		try {
 			IndexGenerator indexGenerator = IndexGeneratorFactory.createIndexGenerator(
 				"my-index-{id|yyyy-MM-dd}",
@@ -196,7 +196,7 @@ public class IndexGeneratorTest {
 				fieldTypes);
 			Assert.assertEquals("my-index", indexGenerator.generate(rows.get(0)));
 		} catch (TableException e) {
-			Assert.assertEquals(e.getMessage(), expectedExceptionMsg);
+			Assert.assertEquals(expectedExceptionMsg, e.getMessage());
 		}
 	}
 
@@ -211,7 +211,7 @@ public class IndexGeneratorTest {
 			Assert.assertEquals("my-index-2020/03/18", indexGenerator1.generate(rows.get(0)));
 			Assert.assertEquals("my-index-2020/03/19", indexGenerator1.generate(rows.get(1)));
 		} catch (Exception e) {
-			Assert.assertEquals(e.getMessage(), expectedExceptionMsg);
+			Assert.assertEquals(expectedExceptionMsg, e.getMessage());
 		}
 	}
 }

@@ -40,16 +40,17 @@ import java.util.regex.Pattern;
 /**
  * A custom {@link IndexGenerator} to generate formatted index from index pattern.
  *
- * <p>If the index is a dynamic index, the index pattern include general pattern like
- * 'connector.index'='my-index-{item}' and time extract pattern like 'connector.index'='my-index-{log_ts|yyyy-MM-dd}'.
+ * <p>Flink supports both static index and dynamic index.
  *
- * <p>general pattern:
- * 'item' is the index field comes from any DataType column.
+ * <p>If you want to have a static index, this option value should be a plain string, e.g. 'myusers',
+ * all the records will be consistently written into "myusers" index.
  *
- * <p>With format pattern:
- * 'log_ts' is the index field comes from a BIGINT/SQL_TIMESTAMP/SQL_DATE column.
- * 'yyyy-MM-dd' is the date format follows the {@link java.text.SimpleDateFormat} syntax.
- * '{log_ts|yyyy-MM-dd}' is the time extract pattern for index in a dynamic index pattern.
+ * <p>If you want to have a dynamic index, you can use '{field_name}' to reference a field value in the
+ * record to dynamically generate a target index. You can also use '{field_name|date_format_string}' to
+ * convert a field value of TIMESTAMP/DATE/TIME type into the format specified by date_format_string. The
+ * date_format_string is compatible with {@link java.text.SimpleDateFormat}. For example, if the option
+ * value is 'myusers_{log_ts|yyyy-MM-dd}', then a record with log_ts field value 2020-03-27 12:25:55 will
+ * be written into "myusers-2020-03-27" index.
  */
 @Internal
 public class CustomIndexGenerator implements IndexGenerator {
@@ -58,6 +59,7 @@ public class CustomIndexGenerator implements IndexGenerator {
 
 	private static final Pattern dynamicIndexPattern = Pattern.compile(".*\\{.+\\}.*");
 	private static final Pattern dynamicIndexTimeExtractPattern = Pattern.compile(".*\\{.+\\|.*\\}.*");
+	private static final String default_date_format = "yyyy-MM-dd";
 
 	private final String index;
 	private final String[] fieldNames;
@@ -65,6 +67,8 @@ public class CustomIndexGenerator implements IndexGenerator {
 	private final boolean isDynamicIndex;
 	private final boolean isDynamicIndexWithFormat;
 	private final IndexRuntimeConverter indexRuntimeConverter;
+
+	private transient DateTimeFormatter dateTimeFormatter;
 
 	CustomIndexGenerator(String index, String[] fieldNames, TypeInformation<?>[] fieldTypes) {
 		this.index = index;
@@ -77,7 +81,10 @@ public class CustomIndexGenerator implements IndexGenerator {
 
 	@Override
 	public String generate(Row row) {
-		return indexRuntimeConverter.convert(row);
+		if (dateTimeFormatter == null) {
+			dateTimeFormatter = extractDateFormatter();
+		}
+		return indexRuntimeConverter.convert(row, dateTimeFormatter);
 	}
 
 	/**
@@ -132,9 +139,13 @@ public class CustomIndexGenerator implements IndexGenerator {
 	/**
 	 * Extract {@link DateTimeFormatter} by the date format that extracted from index pattern string.
 	 */
-	private DateTimeFormatter extractDateFormat() {
-		String pattern = index.substring(index.indexOf("|") + 1, index.indexOf("}"));
-		return DateTimeFormatter.ofPattern(pattern);
+	private DateTimeFormatter extractDateFormatter() {
+		if (isDynamicIndexWithFormat) {
+			String pattern = index.substring(index.indexOf("|") + 1, index.indexOf("}"));
+			return DateTimeFormatter.ofPattern(pattern);
+		} else {
+			return DateTimeFormatter.ofPattern(default_date_format);
+		}
 	}
 
 	/**
@@ -142,7 +153,7 @@ public class CustomIndexGenerator implements IndexGenerator {
 	 */
 	@FunctionalInterface
 	private interface IndexRuntimeConverter extends Serializable {
-		String convert(Row row);
+		String convert(Row row, DateTimeFormatter formatter);
 	}
 
 	private IndexRuntimeConverter createIndexRuntimeConverter() {
@@ -154,61 +165,60 @@ public class CustomIndexGenerator implements IndexGenerator {
 			// time extract dynamic index pattern
 			if (isDynamicIndexWithFormat) {
 				final TypeInformation<?> indexFieldType = fieldTypes[indexFieldPos];
-				final DateTimeFormatter dateFormat = extractDateFormat();
 				// DataTypes.SQL_TIMESTAMP
 				if (indexFieldType == Types.LOCAL_DATE_TIME) {
-					return (row) -> {
+					return (row, formatter) -> {
 						LocalDateTime indexFiled = (LocalDateTime) row.getField(indexFieldPos);
-						String indexFiledValueStr = indexFiled.format(dateFormat);
+						String indexFiledValueStr = indexFiled.format(formatter);
 						return indexPrefix.concat(indexFiledValueStr).concat(indexSuffix);
 					};
 				} else if (indexFieldType == Types.SQL_TIMESTAMP) {
-					return (row) -> {
+					return (row, formatter) -> {
 						Timestamp indexFiled = (Timestamp) row.getField(indexFieldPos);
-						String indexFiledValueStr = indexFiled.toLocalDateTime().format(dateFormat);
+						String indexFiledValueStr = indexFiled.toLocalDateTime().format(formatter);
 						return indexPrefix.concat(indexFiledValueStr).concat(indexSuffix);
 					};
 				}
 				// DataTypes.SQL_DATE
 				else if (indexFieldType == Types.LOCAL_DATE) {
-					return (row) -> {
+					return (row, formatter) -> {
 						LocalDate indexFiled = (LocalDate) row.getField(indexFieldPos);
-						String indexFiledValueStr = indexFiled.format(dateFormat);
+						String indexFiledValueStr = indexFiled.format(dateTimeFormatter);
 						return indexPrefix.concat(indexFiledValueStr).concat(indexSuffix);
 					};
 				} else if (indexFieldType == Types.SQL_DATE) {
-					return (row) -> {
+					return (row, formatter) -> {
 						Date indexFiled = (Date) row.getField(indexFieldPos);
-						String indexFiledValueStr = indexFiled.toLocalDate().format(dateFormat);
+						String indexFiledValueStr = indexFiled.toLocalDate().format(dateTimeFormatter);
 						return indexPrefix.concat(indexFiledValueStr).concat(indexSuffix);
 					};
 				} // DataTypes.TIME
 				else if (indexFieldType == Types.LOCAL_TIME) {
-					return (row) -> {
+					return (row, formatter) -> {
 						LocalTime indexFiled = (LocalTime) row.getField(indexFieldPos);
-						String indexFiledValueStr = indexFiled.format(dateFormat);
+						String indexFiledValueStr = indexFiled.format(dateTimeFormatter);
 						return indexPrefix.concat(indexFiledValueStr).concat(indexSuffix);
 					};
 				} else if (indexFieldType == Types.SQL_TIME) {
-					return (row) -> {
+					return (row, formatter) -> {
 						Time indexFiled = (Time) row.getField(indexFieldPos);
-						String indexFiledValueStr = indexFiled.toLocalTime().format(dateFormat);
+						String indexFiledValueStr = indexFiled.toLocalTime().format(dateTimeFormatter);
 						return indexPrefix.concat(indexFiledValueStr).concat(indexSuffix);
 					};
 				} else {
 					throw new TableException(String.format("Unsupported DataType '%s' found in Elasticsearch dynamic index column:, " +
-						"extract time-related pattern only support DataType 'SQL_TIMESTAMP' and 'SQL_DATE'.", indexFieldType));
+						"extract time-related pattern only support DataType 'TIMESTAMP', 'DATE' and 'TIME'.", indexFieldType));
 				}
 			}
 
 			// general dynamic index pattern
-			return (row) -> {
+			return (row, formatter) -> {
 				Object indexFiled = row.getField(indexFieldPos);
 				return indexPrefix.concat(indexFiled == null ? "" : indexFiled.toString()).concat(indexSuffix);
 			};
 		}
 		// static index
-		return (row) -> index;
+		return (row, formatter) -> index;
 	}
 
 	@Override
