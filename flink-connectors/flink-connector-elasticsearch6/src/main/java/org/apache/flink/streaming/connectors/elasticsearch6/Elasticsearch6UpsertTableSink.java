@@ -27,6 +27,7 @@ import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.apache.flink.streaming.connectors.elasticsearch.ActionRequestFailureHandler;
 import org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchSinkBase;
 import org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchUpsertTableSinkBase;
+import org.apache.flink.streaming.connectors.elasticsearch.IndexGenerator;
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.types.Row;
 
@@ -128,7 +129,8 @@ public class Elasticsearch6UpsertTableSink extends ElasticsearchUpsertTableSinkB
 			List<Host> hosts,
 			ActionRequestFailureHandler failureHandler,
 			Map<SinkOption, String> sinkOptions,
-			ElasticsearchUpsertSinkFunction upsertSinkFunction) {
+			ElasticsearchUpsertSinkFunction upsertSinkFunction,
+			IndexGenerator indexGenerator) {
 
 		final List<HttpHost> httpHosts = hosts.stream()
 			.map((host) -> new HttpHost(host.hostname, host.port, host.protocol))
@@ -137,6 +139,8 @@ public class Elasticsearch6UpsertTableSink extends ElasticsearchUpsertTableSinkB
 		final ElasticsearchSink.Builder<Tuple2<Boolean, Row>> builder = createBuilder(upsertSinkFunction, httpHosts);
 
 		builder.setFailureHandler(failureHandler);
+
+		builder.setIndexGenerator(indexGenerator);
 
 		Optional.ofNullable(sinkOptions.get(BULK_FLUSH_MAX_ACTIONS))
 			.ifPresent(v -> builder.setBulkFlushMaxActions(Integer.valueOf(v)));

@@ -18,9 +18,11 @@
 package org.apache.flink.streaming.connectors.elasticsearch6;
 
 import org.apache.flink.annotation.PublicEvolving;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.connectors.elasticsearch.ActionRequestFailureHandler;
 import org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchSinkBase;
 import org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchSinkFunction;
+import org.apache.flink.streaming.connectors.elasticsearch.IndexGenerator;
 import org.apache.flink.streaming.connectors.elasticsearch.util.NoOpFailureHandler;
 import org.apache.flink.util.Preconditions;
 
@@ -61,15 +63,24 @@ import java.util.Objects;
 public class ElasticsearchSink<T> extends ElasticsearchSinkBase<T, RestHighLevelClient> {
 
 	private static final long serialVersionUID = 1L;
+	private final IndexGenerator indexGenerator;
 
 	private ElasticsearchSink(
 		Map<String, String> bulkRequestsConfig,
 		List<HttpHost> httpHosts,
 		ElasticsearchSinkFunction<T> elasticsearchSinkFunction,
 		ActionRequestFailureHandler failureHandler,
-		RestClientFactory restClientFactory) {
+		RestClientFactory restClientFactory,
+		IndexGenerator indexGenerator) {
 
 		super(new Elasticsearch6ApiCallBridge(httpHosts, restClientFactory),  bulkRequestsConfig, elasticsearchSinkFunction, failureHandler);
+		this.indexGenerator = indexGenerator;
+	}
+
+	@Override
+	public void open(Configuration parameters) throws Exception {
+		super.open(parameters);
+		this.indexGenerator.open();
 	}
 
 	/**
@@ -86,6 +97,7 @@ public class ElasticsearchSink<T> extends ElasticsearchSinkBase<T, RestHighLevel
 		private Map<String, String> bulkRequestsConfig = new HashMap<>();
 		private ActionRequestFailureHandler failureHandler = new NoOpFailureHandler();
 		private RestClientFactory restClientFactory = restClientBuilder -> {};
+		private IndexGenerator indexGenerator;
 
 		/**
 		 * Creates a new {@code ElasticsearchSink} that connects to the cluster using a {@link RestHighLevelClient}.
@@ -201,12 +213,23 @@ public class ElasticsearchSink<T> extends ElasticsearchSinkBase<T, RestHighLevel
 		}
 
 		/**
+		 * Provided to the user via index format to create index dynamically.
+		 *
+		 * @param indexGenerator the indexGenerator that generates index.
+		 */
+		public void setIndexGenerator(IndexGenerator indexGenerator) {
+			Preconditions.checkNotNull(indexGenerator);
+			this.indexGenerator = indexGenerator;
+		}
+
+		/**
 		 * Creates the Elasticsearch sink.
 		 *
 		 * @return the created Elasticsearch sink.
 		 */
 		public ElasticsearchSink<T> build() {
-			return new ElasticsearchSink<>(bulkRequestsConfig, httpHosts, elasticsearchSinkFunction, failureHandler, restClientFactory);
+			return new ElasticsearchSink<>(bulkRequestsConfig, httpHosts, elasticsearchSinkFunction, failureHandler,
+				restClientFactory, indexGenerator);
 		}
 
 		@Override

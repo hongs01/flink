@@ -41,13 +41,13 @@ import java.util.List;
  */
 public class IndexGeneratorTest {
 	private String[] fieldNames;
-	private TypeInformation[] fieldTypes;
+	private TypeInformation<?>[] fieldTypes;
 	private List<Row> rows;
 
 	@Before
 	public void prepareData() {
 		fieldNames = new String[] {"id", "item", "log_ts", "log_date", "order_timestamp", "log_time", "local_datetime", "local_date", "local_time", "note"};
-		fieldTypes = new TypeInformation[] {
+		fieldTypes = new TypeInformation<?>[] {
 			Types.INT,
 			Types.STRING,
 			Types.LONG,
@@ -90,11 +90,13 @@ public class IndexGeneratorTest {
 			"{order_timestamp|yyyy_MM_dd_HH-ss}_index",
 			fieldNames,
 			fieldTypes);
+		indexGenerator.open();
 		Assert.assertEquals("2020_03_18_12-14_index", indexGenerator.generate(rows.get(0)));
 		IndexGenerator indexGenerator1 = IndexGeneratorFactory.createIndexGenerator(
 			"{order_timestamp|yyyy_MM_dd_HH_mm}_index",
 			fieldNames,
 			fieldTypes);
+		indexGenerator1.open();
 		Assert.assertEquals("2020_03_19_12_22_index", indexGenerator1.generate(rows.get(1)));
 	}
 
@@ -104,11 +106,13 @@ public class IndexGeneratorTest {
 			"{local_datetime|yyyy_MM_dd_HH-ss}_index",
 			fieldNames,
 			fieldTypes);
+		indexGenerator.open();
 		Assert.assertEquals("2020_03_18_12-14_index", indexGenerator.generate(rows.get(0)));
 		IndexGenerator indexGenerator1 = IndexGeneratorFactory.createIndexGenerator(
 			"{local_datetime|yyyy_MM_dd_HH_mm}_index",
 			fieldNames,
 			fieldTypes);
+		indexGenerator1.open();
 		Assert.assertEquals("2020_03_19_12_22_index", indexGenerator1.generate(rows.get(1)));
 	}
 
@@ -118,6 +122,7 @@ public class IndexGeneratorTest {
 			"my-index-{log_date|yyyy/MM/dd}",
 			fieldNames,
 			fieldTypes);
+		indexGenerator.open();
 		Assert.assertEquals("my-index-2020/03/18", indexGenerator.generate(rows.get(0)));
 		Assert.assertEquals("my-index-2020/03/19", indexGenerator.generate(rows.get(1)));
 	}
@@ -128,6 +133,7 @@ public class IndexGeneratorTest {
 			"my-index-{local_date|yyyy/MM/dd}",
 			fieldNames,
 			fieldTypes);
+		indexGenerator.open();
 		Assert.assertEquals("my-index-2020/03/18", indexGenerator.generate(rows.get(0)));
 		Assert.assertEquals("my-index-2020/03/19", indexGenerator.generate(rows.get(1)));
 	}
@@ -138,6 +144,7 @@ public class IndexGeneratorTest {
 			"my-index-{log_time|HH-mm}",
 			fieldNames,
 			fieldTypes);
+		indexGenerator.open();
 		Assert.assertEquals("my-index-12-12", indexGenerator.generate(rows.get(0)));
 		Assert.assertEquals("my-index-12-22", indexGenerator.generate(rows.get(1)));
 	}
@@ -148,6 +155,7 @@ public class IndexGeneratorTest {
 			"my-index-{local_time|HH-mm}",
 			fieldNames,
 			fieldTypes);
+		indexGenerator.open();
 		Assert.assertEquals("my-index-12-13", indexGenerator.generate(rows.get(0)));
 		Assert.assertEquals("my-index-12-13", indexGenerator.generate(rows.get(1)));
 	}
@@ -158,6 +166,7 @@ public class IndexGeneratorTest {
 			"index_{item}",
 			fieldNames,
 			fieldTypes);
+		indexGenerator.open();
 		Assert.assertEquals("index_apple", indexGenerator.generate(rows.get(0)));
 		Assert.assertEquals("index_peanut", indexGenerator.generate(rows.get(1)));
 	}
@@ -168,6 +177,7 @@ public class IndexGeneratorTest {
 			"my-index",
 			fieldNames,
 			fieldTypes);
+		indexGenerator.open();
 		Assert.assertEquals("my-index", indexGenerator.generate(rows.get(0)));
 		Assert.assertEquals("my-index", indexGenerator.generate(rows.get(1)));
 	}
@@ -180,6 +190,7 @@ public class IndexGeneratorTest {
 				"my-index-{unknown_ts|yyyy-MM-dd}",
 				fieldNames,
 				fieldTypes);
+			indexGenerator.open();
 			Assert.assertEquals("my-index", indexGenerator.generate(rows.get(0)));
 		} catch (Exception e) {
 			Assert.assertEquals(e.getMessage(), expectedExceptionMsg);
@@ -194,6 +205,7 @@ public class IndexGeneratorTest {
 				"my-index-{id|yyyy-MM-dd}",
 				fieldNames,
 				fieldTypes);
+			indexGenerator.open();
 			Assert.assertEquals("my-index", indexGenerator.generate(rows.get(0)));
 		} catch (TableException e) {
 			Assert.assertEquals(expectedExceptionMsg, e.getMessage());

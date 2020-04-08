@@ -190,7 +190,8 @@ public abstract class ElasticsearchUpsertTableSinkBase implements UpsertStreamTa
 			hosts,
 			failureHandler,
 			sinkOptions,
-			upsertFunction);
+			upsertFunction,
+			indexGenerator);
 		return dataStream.addSink(sinkFunction)
 			.setParallelism(dataStream.getParallelism())
 			.name(TableConnectorUtils.generateRuntimeName(this.getClass(), getFieldNames()));
@@ -293,7 +294,8 @@ public abstract class ElasticsearchUpsertTableSinkBase implements UpsertStreamTa
 		List<Host> hosts,
 		ActionRequestFailureHandler failureHandler,
 		Map<SinkOption, String> sinkOptions,
-		ElasticsearchUpsertSinkFunction upsertFunction);
+		ElasticsearchUpsertSinkFunction upsertFunction,
+		IndexGenerator indexGenerator);
 
 	// --------------------------------------------------------------------------------------------
 	// Helper methods

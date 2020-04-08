@@ -18,6 +18,7 @@
 
 package org.apache.flink.streaming.connectors.elasticsearch;
 
+import org.apache.flink.annotation.Internal;
 import org.apache.flink.types.Row;
 
 import java.io.Serializable;
@@ -25,6 +26,10 @@ import java.io.Serializable;
 /**
  * Interface to generate index from {@link Row}.
  */
+@Internal
 public interface IndexGenerator extends Serializable {
+
+	default void open() {}
+
 	String generate(Row row);
 }
