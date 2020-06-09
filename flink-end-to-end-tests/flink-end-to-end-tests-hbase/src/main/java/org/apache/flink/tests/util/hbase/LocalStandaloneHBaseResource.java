@@ -58,7 +58,8 @@ public class LocalStandaloneHBaseResource implements HBaseResource {
 	}
 
 	private static String getHBaseDownloadUrl() {
-		return "http://archive.apache.org/dist/hbase/1.4.3/hbase-1.4.3-bin.tar.gz";
+		return "http://mirror.bit.edu.cn/apache/hbase/1.4.13/hbase-1.4.13-bin.tar.gz";
+//		return "http://archive.apache.org/dist/hbase/1.4.3/hbase-1.4.3-bin.tar.gz";
 	}
 
 	@Override
@@ -73,7 +74,10 @@ public class LocalStandaloneHBaseResource implements HBaseResource {
 
 	private void setupHBaseDist() throws IOException {
 		final Path downloadDirectory = tmp.newFolder("getOrDownload").toPath();
-		final Path hbaseArchive = downloadCache.getOrDownload(getHBaseDownloadUrl(), downloadDirectory);
+		final Path localFile = Paths.get("/Users/bang/sourcecode/flink-source/hbase-1.4.3-bin.tar.gz");
+		final Path hbaseArchive = Paths.get(downloadDirectory.toAbsolutePath().toString() + "/hbase-1.4.3-bin.tar.gz");
+		Files.copy(localFile, hbaseArchive);
+//		final Path hbaseArchive = downloadCache.getOrDownload(getHBaseDownloadUrl(), downloadDirectory);
 
 		LOG.info("HBase localtion: {}", hbaseDir.toAbsolutePath());
 		AutoClosableProcess.runBlocking(CommandLineWrapper

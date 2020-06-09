@@ -47,6 +47,7 @@ import java.io.IOException;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
 
@@ -94,8 +95,16 @@ public class SQLClientHBaseITCase extends TestLogger {
 		this.sqlClientSessionConf = tmpPath.resolve("sql-client-session.conf");
 
 		//download flink shaded hadoop jar for hbase e2e test using
-		shadedHadoopJar = DOWNLOAD_CACHE.getOrDownload(
-			"https://repo.maven.apache.org/maven2/org/apache/flink/flink-shaded-hadoop-2-uber/2.4.1-10.0/flink-shaded-hadoop-2-uber-2.4.1-10.0.jar", tmpPath);
+//		shadedHadoopJar = DOWNLOAD_CACHE.getOrDownload(
+//			"https://repo.maven.apache.org/maven2/org/apache/flink/flink-shaded-hadoop-2-uber/2.4.1-10.0/flink-shaded-hadoop-2-uber-2.4.1-10.0.jar", tmpPath);
+
+		//mvn install -Dgroups="org.apache.flink.tests.util.categories.TravisGroup1, org.apache.flink.tests.util.categories.PreCommit"
+		// -DdistDir=/Users/bang/sourcecode/project/flink-master/flink/build-target
+		// local run command, stop local hadoop cluster , clear hadoop_classpath for the test.
+		shadedHadoopJar = Paths.get(tmpPath.toAbsolutePath().toString() + "/flink-shaded-hadoop-2-uber-2.4.1-10.0.jar");
+		Path localJar = Paths.get("/Users/bang/sourcecode/flink-source/flink-shaded-hadoop-2-uber-2.4.1-10.0.jar");
+		Files.copy(localJar, shadedHadoopJar);
+		System.out.println(shadedHadoopJar.toAbsolutePath().toString());
 	}
 
 	@Test

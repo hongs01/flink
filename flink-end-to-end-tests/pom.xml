@@ -38,7 +38,7 @@ under the License.
 		<!-- functions as a global exclude; required since an empty set of included groups implicitly includes all -->
 		<includeE2E.default>org.apache.flink.tests.util.categories.Dummy</includeE2E.default>
 		<!-- default inclusions / exclusions -->
-		<e2e.include.org.apache.flink.tests.util.categories.TravisGroup1>false</e2e.include.org.apache.flink.tests.util.categories.TravisGroup1>
+		<e2e.include.org.apache.flink.tests.util.categories.TravisGroup1>true</e2e.include.org.apache.flink.tests.util.categories.TravisGroup1>
 		<e2e.include.org.apache.flink.tests.util.categories.TravisGroup2>false</e2e.include.org.apache.flink.tests.util.categories.TravisGroup2>
 		<e2e.include.org.apache.flink.tests.util.categories.TravisGroup3>false</e2e.include.org.apache.flink.tests.util.categories.TravisGroup3>
 		<e2e.include.org.apache.flink.tests.util.categories.TravisGroup4>false</e2e.include.org.apache.flink.tests.util.categories.TravisGroup4>
