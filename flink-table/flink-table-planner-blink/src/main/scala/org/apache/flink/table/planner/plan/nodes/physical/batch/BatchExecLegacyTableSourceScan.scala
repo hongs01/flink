@@ -156,7 +156,7 @@ class BatchExecLegacyTableSourceScan(
       env: StreamExecutionEnvironment,
       format: InputFormat[IN, _ <: InputSplit],
       t: TypeInformation[IN]): Transformation[IN] = {
-    // env.createInput will use ContinuousFileReaderOperator, but it do not support multiple
+    // env.createInput will use ContinuousFileReaderOperator, but it does not support multiple
     // paths. If read partitioned source, after partition pruning, we need let InputFormat
     // to read multiple partitions which are multiple paths.
     // We can use InputFormatSourceFunction directly to support InputFormat.

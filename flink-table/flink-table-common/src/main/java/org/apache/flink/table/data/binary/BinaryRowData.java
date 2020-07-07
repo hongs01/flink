@@ -47,7 +47,7 @@ import static org.apache.flink.util.Preconditions.checkArgument;
  * <p>Fixed-length part contains 1 byte header and null bit set and field values. Null bit set is
  * used for null tracking and is aligned to 8-byte word boundaries. `Field values` holds
  * fixed-length primitive types and variable-length values which can be stored in 8 bytes inside.
- * If it do not fit the variable-length field, then store the length and offset of variable-length
+ * If it does not fit the variable-length field, then store the length and offset of variable-length
  * part.
  *
  * <p>Fixed-length part will certainly fall into a MemorySegment, which will speed up the read
