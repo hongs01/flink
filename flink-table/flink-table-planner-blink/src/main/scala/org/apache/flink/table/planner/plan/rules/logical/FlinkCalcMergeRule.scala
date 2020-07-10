@@ -18,13 +18,14 @@
 
 package org.apache.flink.table.planner.plan.rules.logical
 
-import org.apache.flink.table.planner.plan.utils.FlinkRexUtil
 
 import org.apache.calcite.plan.RelOptRule.{any, operand}
+import org.apache.calcite.plan.RelOptUtil.InputFinder
 import org.apache.calcite.plan.{RelOptRule, RelOptRuleCall}
 import org.apache.calcite.rel.core.{Calc, RelFactories}
-import org.apache.calcite.rex.{RexOver, RexProgramBuilder, RexUtil}
+import org.apache.calcite.rex.{RexNode, RexOver, RexProgramBuilder, RexUtil}
 import org.apache.calcite.tools.RelBuilderFactory
+import org.apache.flink.table.planner.plan.utils.FlinkRexUtil
 
 import scala.collection.JavaConversions._
 
@@ -60,9 +61,40 @@ class FlinkCalcMergeRule(relBuilderFactory: RelBuilderFactory) extends RelOptRul
       return false
     }
 
-    // Don't merge Calcs which contain non-deterministic expr
-    topProgram.getExprList.forall(RexUtil.isDeterministic) &&
-      bottomCalc.getProgram.getExprList.forall(RexUtil.isDeterministic)
+    // Each bottomCalc's non-deterministic RexNode should appear at most once in
+    // topCalc's project fields and condition field.
+    val bottomProgram = bottomCalc.getProgram
+    val topProjectRexNodesInputs = topProgram.getProjectList
+      .map(r => topProgram.expandLocalRef(r))
+      .map(r => InputFinder.bits(r).toArray)
+
+    val topFilterRexNodesInputs = if (topProgram.getCondition != null) {
+      InputFinder.bits(topProgram.expandLocalRef(topProgram.getCondition))
+        .toArray
+    } else {
+      new Array[Int](0)
+    }
+
+    val bottomRexList = bottomProgram.getProjectList
+      .map(r => bottomProgram.expandLocalRef(r))
+      .toArray
+
+    bottomRexList.zipWithIndex.forall {
+      case (rexNode: RexNode, index: Int) => {
+        var nonDeterministicRexRefCnt = 0
+        if (!RexUtil.isDeterministic(rexNode)) {
+          topProjectRexNodesInputs.foreach(list => list.foreach(
+            ref => if (ref == index) {
+              nonDeterministicRexRefCnt += 1
+            }))
+          topFilterRexNodesInputs.foreach(
+            ref => if (ref == index) {
+              nonDeterministicRexRefCnt += 1
+            })
+        }
+        nonDeterministicRexRefCnt <= 1
+      }
+    }
   }
 
   override def onMatch(call: RelOptRuleCall): Unit = {
