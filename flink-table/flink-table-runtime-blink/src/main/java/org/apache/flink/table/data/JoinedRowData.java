@@ -28,6 +28,7 @@ import org.apache.flink.types.RowKind;
 public class JoinedRowData implements RowData {
 
 	private RowKind rowKind = RowKind.INSERT;
+	private long operationTime = 0L;
 	private RowData row1;
 	private RowData row2;
 
@@ -57,6 +58,16 @@ public class JoinedRowData implements RowData {
 	@Override
 	public void setRowKind(RowKind kind) {
 		this.rowKind = kind;
+	}
+
+	@Override
+	public Long getOperationTime() {
+		return operationTime;
+	}
+
+	@Override
+	public void setOperationTime(long operationTime) {
+		this.operationTime = operationTime;
 	}
 
 	@Override

@@ -29,6 +29,7 @@ import org.apache.flink.types.RowKind;
 public final class ColumnarRowData implements RowData, TypedSetters {
 
 	private RowKind rowKind = RowKind.INSERT;
+	private long operationTime = 0L;
 	private VectorizedColumnBatch vectorizedColumnBatch;
 	private int rowId;
 
@@ -56,6 +57,16 @@ public final class ColumnarRowData implements RowData, TypedSetters {
 	@Override
 	public RowKind getRowKind() {
 		return rowKind;
+	}
+
+	@Override
+	public Long getOperationTime() {
+		return operationTime;
+	}
+
+	@Override
+	public void setOperationTime(long operationTime) {
+		this.operationTime = operationTime;
 	}
 
 	@Override

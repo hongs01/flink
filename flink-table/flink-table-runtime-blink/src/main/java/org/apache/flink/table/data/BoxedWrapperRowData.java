@@ -30,6 +30,7 @@ import org.apache.flink.types.ShortValue;
 import org.apache.flink.util.StringUtils;
 
 import java.util.Arrays;
+import java.util.Objects;
 
 /**
  * An implementation of {@link RowData} which also is also backed by an array of
@@ -40,6 +41,8 @@ import java.util.Arrays;
 public class BoxedWrapperRowData implements RowData, TypedSetters {
 
 	private RowKind rowKind = RowKind.INSERT; // INSERT as default
+
+	private long operationTime = 0L;
 
 	protected final Object[] fields;
 
@@ -60,6 +63,16 @@ public class BoxedWrapperRowData implements RowData, TypedSetters {
 	@Override
 	public void setRowKind(RowKind kind) {
 		this.rowKind = kind;
+	}
+
+	@Override
+	public Long getOperationTime() {
+		return operationTime;
+	}
+
+	@Override
+	public void setOperationTime(long operationTime) {
+		this.operationTime = operationTime;
 	}
 
 	@Override
@@ -233,18 +246,24 @@ public class BoxedWrapperRowData implements RowData, TypedSetters {
 	}
 
 	@Override
-	public int hashCode() {
-		return 31 * rowKind.hashCode() + Arrays.hashCode(fields);
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (!(o instanceof BoxedWrapperRowData)) {
+			return false;
+		}
+		BoxedWrapperRowData that = (BoxedWrapperRowData) o;
+		return operationTime == that.operationTime &&
+			rowKind == that.rowKind &&
+			Arrays.equals(fields, that.fields);
 	}
 
 	@Override
-	public boolean equals(Object o) {
-		if (o instanceof BoxedWrapperRowData) {
-			BoxedWrapperRowData other = (BoxedWrapperRowData) o;
-			return rowKind == other.rowKind && Arrays.equals(fields, other.fields);
-		} else {
-			return false;
-		}
+	public int hashCode() {
+		int result = Objects.hash(rowKind, operationTime);
+		result = 31 * result + Arrays.hashCode(fields);
+		return result;
 	}
 
 	@Override

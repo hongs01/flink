@@ -58,11 +58,10 @@ public class DataFormatTestUtil {
 	 * Get a binary row of 24 bytes long.
 	 */
 	public static BinaryRowData get24BytesBinaryRow() {
-		// header (8 bytes) + 2 * string in fixed-length part (8 bytes each)
-		BinaryRowData row = new BinaryRowData(2);
+		// header (16 bytes) + 1 * string in fixed-length part (8 bytes each)
+		BinaryRowData row = new BinaryRowData(1);
 		BinaryRowWriter writer = new BinaryRowWriter(row);
 		writer.writeString(0, StringData.fromString(RandomStringUtils.randomNumeric(2)));
-		writer.writeString(1, StringData.fromString(RandomStringUtils.randomNumeric(2)));
 		writer.complete();
 		return row;
 	}
@@ -71,12 +70,12 @@ public class DataFormatTestUtil {
 	 * Get a binary row of 160 bytes long.
 	 */
 	public static BinaryRowData get160BytesBinaryRow() {
-		// header (8 bytes) +
-		// 72 byte length string (8 bytes in fixed-length, 72 bytes in variable-length) +
+		// header (16 bytes) +
+		// 64 byte length string (8 bytes in fixed-length,64 bytes in variable-length) +
 		// 64 byte length string (8 bytes in fixed-length, 64 bytes in variable-length)
 		BinaryRowData row = new BinaryRowData(2);
 		BinaryRowWriter writer = new BinaryRowWriter(row);
-		writer.writeString(0, StringData.fromString(RandomStringUtils.randomNumeric(72)));
+		writer.writeString(0, StringData.fromString(RandomStringUtils.randomNumeric(64)));
 		writer.writeString(1, StringData.fromString(RandomStringUtils.randomNumeric(64)));
 		writer.complete();
 		return row;

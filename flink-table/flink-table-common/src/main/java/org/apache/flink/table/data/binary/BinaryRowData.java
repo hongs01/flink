@@ -44,8 +44,9 @@ import static org.apache.flink.util.Preconditions.checkArgument;
  *
  * <p>A Row has two part: Fixed-length part and variable-length part.
  *
- * <p>Fixed-length part contains 1 byte header and null bit set and field values. Null bit set is
- * used for null tracking and is aligned to 8-byte word boundaries. `Field values` holds
+ * <p>Fixed-length part contains 9 bytes header and null bit set and field values. Header contains
+ * 1 byte part for storing row kind part and 8 bytes part for storing operation time. Null bit set
+ * is used for null tracking and is aligned to 8-byte word boundaries. `Field values` holds
  * fixed-length primitive types and variable-length values which can be stored in 8 bytes inside.
  * If it do not fit the variable-length field, then store the length and offset of variable-length
  * part.
@@ -63,7 +64,9 @@ public final class BinaryRowData extends BinarySection implements RowData, Typed
 
 	public static final boolean LITTLE_ENDIAN = (ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN);
 	private static final long FIRST_BYTE_ZERO = LITTLE_ENDIAN ? ~0xFFL : ~(0xFFL << 56L);
-	public static final int HEADER_SIZE_IN_BITS = 8;
+	public static final int HEADER_ROW_KIND_IN_BYTES = 1;
+	public static final int HEADER_OPERATION_TIME_IN_BYTES = 8;
+	public static final int HEADER_SIZE_IN_BITS = (HEADER_ROW_KIND_IN_BYTES + HEADER_OPERATION_TIME_IN_BYTES) * 8;
 
 	public static int calculateBitSetWidthInBytes(int arity) {
 		return ((arity + 63 + HEADER_SIZE_IN_BITS) / 64) * 8;
@@ -142,6 +145,16 @@ public final class BinaryRowData extends BinarySection implements RowData, Typed
 	@Override
 	public void setRowKind(RowKind kind) {
 		segments[0].put(offset, kind.toByteValue());
+	}
+
+	@Override
+	public Long getOperationTime() {
+		return segments[0].getLong(offset + HEADER_ROW_KIND_IN_BYTES);
+	}
+
+	@Override
+	public void setOperationTime(long operationTime) {
+		segments[0].putLong(offset + HEADER_ROW_KIND_IN_BYTES, operationTime);
 	}
 
 	public void setTotalSize(int sizeInBytes) {

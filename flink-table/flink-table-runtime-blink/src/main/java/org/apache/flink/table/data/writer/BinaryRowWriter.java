@@ -72,8 +72,9 @@ public final class BinaryRowWriter extends AbstractBinaryWriter {
 		BinarySegmentUtils.bitSet(segment, 0, pos + BinaryRowData.HEADER_SIZE_IN_BITS);
 	}
 
-	public void writeRowKind(RowKind kind) {
+	public void writeRowKindAndOperationTime(RowKind kind, long operationTime) {
 		segment.put(0, kind.toByteValue());
+		segment.putLong(0 + BinaryRowData.HEADER_ROW_KIND_IN_BYTES, operationTime);
 	}
 
 	@Override

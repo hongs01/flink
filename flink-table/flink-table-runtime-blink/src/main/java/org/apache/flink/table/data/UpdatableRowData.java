@@ -56,6 +56,16 @@ public final class UpdatableRowData implements RowData, TypedSetters {
 	}
 
 	@Override
+	public Long getOperationTime() {
+		return row.getOperationTime();
+	}
+
+	@Override
+	public void setOperationTime(long operationTime) {
+		row.setOperationTime(operationTime);
+	}
+
+	@Override
 	public boolean isNullAt(int pos) {
 		return updated[pos] ? this.fields[pos] == null : row.isNullAt(pos);
 	}

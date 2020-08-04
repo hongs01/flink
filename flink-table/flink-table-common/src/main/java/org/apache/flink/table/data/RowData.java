@@ -134,6 +134,18 @@ public interface RowData {
 	 */
 	void setRowKind(RowKind kind);
 
+	/**
+	 * Returns the time when this row is operated in a changelog.
+	 * @return
+	 */
+	Long getOperationTime() ;
+
+	/**
+	 * Sets the time when this row is operated in a changelog,
+	 * the time is the milliseconds since the Java epoch of 1970-01-01T00:00:00Z.
+	 */
+	void setOperationTime(long operationTime);
+
 	// ------------------------------------------------------------------------------------------
 	// Read-only accessor methods
 	// ------------------------------------------------------------------------------------------

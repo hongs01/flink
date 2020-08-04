@@ -53,6 +53,9 @@ public final class GenericRowData implements RowData {
 	/** The kind of change that a row describes in a changelog. */
 	private RowKind kind;
 
+	/** The operation time of change when this row is operated in a changelog. */
+	private long operationTime;
+
 	/**
 	 * Creates an instance of {@link GenericRowData} with given kind and number of fields.
 	 *
@@ -66,6 +69,7 @@ public final class GenericRowData implements RowData {
 	public GenericRowData(RowKind kind, int arity) {
 		this.fields = new Object[arity];
 		this.kind = kind;
+		this.operationTime = Long.MIN_VALUE; // default value
 	}
 
 	/**
@@ -81,6 +85,7 @@ public final class GenericRowData implements RowData {
 	public GenericRowData(int arity) {
 		this.fields = new Object[arity];
 		this.kind = RowKind.INSERT; // INSERT as default
+		this.operationTime = Long.MIN_VALUE; // default value
 	}
 
 	/**
@@ -122,6 +127,16 @@ public final class GenericRowData implements RowData {
 	public void setRowKind(RowKind kind) {
 		checkNotNull(kind);
 		this.kind = kind;
+	}
+
+	@Override
+	public Long getOperationTime() {
+		return operationTime;
+	}
+
+	@Override
+	public void setOperationTime(long operationTime) {
+		this.operationTime = operationTime;
 	}
 
 	@Override
@@ -215,20 +230,28 @@ public final class GenericRowData implements RowData {
 		}
 		GenericRowData that = (GenericRowData) o;
 		return kind == that.kind &&
+			operationTime == operationTime &&
 			Arrays.deepEquals(fields, that.fields);
 	}
 
 	@Override
 	public int hashCode() {
-		int result = Objects.hash(kind);
-		result = 31 * result + Arrays.deepHashCode(fields);
+		int result = Objects.hash(kind, operationTime);
+		result = 31 * result + Arrays.hashCode(fields);
 		return result;
 	}
 
 	@Override
 	public String toString() {
 		StringBuilder sb = new StringBuilder();
-		sb.append(kind.shortString()).append("(");
+		// header portion
+		if (operationTime > Long.MIN_VALUE) {
+			sb.append("[").append(kind.shortString()).append(",").append(operationTime).append("]");
+		} else {
+			sb.append(kind.shortString());
+		}
+		// data portion
+		sb.append("(");
 		for (int i = 0; i < fields.length; i++) {
 			if (i != 0) {
 				sb.append(",");

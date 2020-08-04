@@ -94,11 +94,10 @@ public class BinaryRowDataTest {
 
 	@Test
 	public void testBasic() {
-		// consider header 1 byte.
-		assertEquals(8, new BinaryRowData(0).getFixedLengthPartSize());
-		assertEquals(16, new BinaryRowData(1).getFixedLengthPartSize());
-		assertEquals(536, new BinaryRowData(65).getFixedLengthPartSize());
-		assertEquals(1048, new BinaryRowData(128).getFixedLengthPartSize());
+		assertEquals(16, new BinaryRowData(0).getFixedLengthPartSize());
+		assertEquals(24, new BinaryRowData(1).getFixedLengthPartSize());
+		assertEquals(544, new BinaryRowData(65).getFixedLengthPartSize());
+		assertEquals(1056, new BinaryRowData(128).getFixedLengthPartSize());
 
 		MemorySegment segment = MemorySegmentFactory.wrap(new byte[100]);
 		BinaryRowData row = new BinaryRowData(2);
@@ -390,10 +389,10 @@ public class BinaryRowDataTest {
 
 	@Test
 	public void testHeaderSize() {
-		assertEquals(8, BinaryRowData.calculateBitSetWidthInBytes(56));
-		assertEquals(16, BinaryRowData.calculateBitSetWidthInBytes(57));
-		assertEquals(16, BinaryRowData.calculateBitSetWidthInBytes(120));
-		assertEquals(24, BinaryRowData.calculateBitSetWidthInBytes(121));
+		assertEquals(16, BinaryRowData.calculateBitSetWidthInBytes(56));
+		assertEquals(24, BinaryRowData.calculateBitSetWidthInBytes(57));
+		assertEquals(24, BinaryRowData.calculateBitSetWidthInBytes(120));
+		assertEquals(32, BinaryRowData.calculateBitSetWidthInBytes(121));
 	}
 
 	@Test
@@ -403,7 +402,7 @@ public class BinaryRowDataTest {
 
 		writer.writeInt(0, 10);
 		writer.setNullAt(1);
-		writer.writeRowKind(RowKind.UPDATE_BEFORE);
+		writer.writeRowKindAndOperationTime(RowKind.UPDATE_BEFORE, 0L);
 		writer.complete();
 
 		BinaryRowData newRow = row.copy();
@@ -412,6 +411,50 @@ public class BinaryRowDataTest {
 
 		newRow.setRowKind(RowKind.DELETE);
 		assertEquals(RowKind.DELETE, newRow.getRowKind());
+	}
+
+	@Test
+	public void testHeaderWithOperationTime() {
+		BinaryRowData row = new BinaryRowData(2);
+		BinaryRowWriter writer = new BinaryRowWriter(row);
+
+		writer.writeInt(0, 10);
+		writer.setNullAt(1);
+		writer.writeRowKindAndOperationTime(RowKind.UPDATE_BEFORE, 0L);
+		writer.complete();
+
+		BinaryRowData newRow = row.copy();
+		assertEquals(row, newRow);
+		assertEquals(RowKind.UPDATE_BEFORE, newRow.getRowKind());
+
+		newRow.setRowKind(RowKind.DELETE);
+		assertEquals(RowKind.DELETE, newRow.getRowKind());
+	}
+
+	@Test
+	public void testOperationTime() {
+		BinaryRowData row = new BinaryRowData(3);
+		BinaryRowWriter writer = new BinaryRowWriter(row);
+
+		writer.writeInt(0, 10);
+		writer.setNullAt(1);
+		writer.writeString(2, StringData.fromString("hello, this is a string."));
+		writer.writeRowKindAndOperationTime(RowKind.UPDATE_BEFORE, 123L);
+		writer.complete();
+
+		BinaryRowData newRow = row.copy();
+		assertEquals(row, newRow);
+		assertEquals(RowKind.UPDATE_BEFORE, newRow.getRowKind());
+		assertEquals(Long.valueOf(123L), newRow.getOperationTime());
+
+		newRow.setOperationTime(234L);
+		assertEquals(Long.valueOf(234L), newRow.getOperationTime());
+		newRow.setRowKind(RowKind.INSERT);
+		assertEquals(RowKind.INSERT, newRow.getRowKind());
+
+		assertEquals(10, row.getInt(0));
+		assertTrue(row.isNullAt(1));
+		assertEquals("hello, this is a string.", row.getString(2).toString());
 	}
 
 	@Test
@@ -742,8 +785,8 @@ public class BinaryRowDataTest {
 		BinaryRowDataSerializer serializer = new BinaryRowDataSerializer(1);
 
 		int rowSizeInt = 4;
-		// note that as there is only one field in the row, the fixed-length part is 16 bytes (header + 1 field)
-		int rowFixLength = 16;
+		// note that as there is only one field in the row, the fixed-length part is 24 bytes (header + 1 field)
+		int rowFixLength = 24;
 		for (int i = 0; i < segSize; i++) {
 			// this is the maximum row size we can serialize
 			// if we are going to serialize from the i-th byte of the input view
@@ -1037,8 +1080,8 @@ public class BinaryRowDataTest {
 			writer.complete();
 
 			// the size of row should be 8 + (8 + 8) * 2
-			// (8 bytes nullBits, 8 bytes fixed-length part and 8 bytes variable-length part for each timestamp(9))
-			assertEquals(40, row.getSizeInBytes());
+			// (16 bytes nullBits, 8 bytes fixed-length part and 8 bytes variable-length part for each timestamp(9))
+			assertEquals(48, row.getSizeInBytes());
 
 			assertEquals("1969-01-01T00:00:00.123456789", row.getTimestamp(0, precision).toString());
 			assertTrue(row.isNullAt(1));

@@ -184,7 +184,7 @@ public class RowDataSerializer extends AbstractRowDataSerializer<RowData> {
 			reuseWriter = new BinaryRowWriter(reuseRow);
 		}
 		reuseWriter.reset();
-		reuseWriter.writeRowKind(row.getRowKind());
+		reuseWriter.writeRowKindAndOperationTime(row.getRowKind(), row.getOperationTime());
 		for (int i = 0; i < types.length; i++) {
 			if (row.isNullAt(i)) {
 				reuseWriter.setNullAt(i);

@@ -28,6 +28,8 @@ import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.types.RowKind;
 
+import static org.apache.flink.table.data.binary.BinaryRowData.HEADER_OPERATION_TIME_IN_BYTES;
+import static org.apache.flink.table.data.binary.BinaryRowData.HEADER_SIZE_IN_BITS;
 import static org.apache.flink.table.data.binary.BinaryRowData.calculateBitSetWidthInBytes;
 import static org.apache.flink.util.Preconditions.checkArgument;
 
@@ -78,7 +80,18 @@ public final class NestedRowData extends BinarySection implements RowData, Typed
 
 	private void setNotNullAt(int i) {
 		assertIndexIsValid(i);
-		BinarySegmentUtils.bitUnSet(segments, offset, i + 8);
+		BinarySegmentUtils.bitUnSet(segments, offset, i + HEADER_SIZE_IN_BITS);
+	}
+
+	@Override
+	public Long getOperationTime() {
+		return BinarySegmentUtils.getLong(segments, offset + nullBitsSizeInBytes);
+	}
+
+	@Override
+	public void setOperationTime(long operationTime) {
+		BinarySegmentUtils.setLong(segments, offset + nullBitsSizeInBytes, operationTime);
+
 	}
 
 	/**
@@ -87,7 +100,7 @@ public final class NestedRowData extends BinarySection implements RowData, Typed
 	@Override
 	public void setNullAt(int i) {
 		assertIndexIsValid(i);
-		BinarySegmentUtils.bitSet(segments, offset, i + 8);
+		BinarySegmentUtils.bitSet(segments, offset, i + HEADER_SIZE_IN_BITS);
 		BinarySegmentUtils.setLong(segments, getFieldOffset(i), 0);
 	}
 
@@ -199,7 +212,7 @@ public final class NestedRowData extends BinarySection implements RowData, Typed
 	@Override
 	public boolean isNullAt(int pos) {
 		assertIndexIsValid(pos);
-		return BinarySegmentUtils.bitGet(segments, offset, pos + 8);
+		return BinarySegmentUtils.bitGet(segments, offset, pos + HEADER_SIZE_IN_BITS);
 	}
 
 	@Override
