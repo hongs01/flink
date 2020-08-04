@@ -120,16 +120,21 @@ public final class DebeziumJsonDeserializationSchema implements DeserializationS
 
 			GenericRowData before = (GenericRowData) payload.getField(0);
 			GenericRowData after = (GenericRowData) payload.getField(1);
-			String op = payload.getField(2).toString();
+			GenericRowData source = (GenericRowData) payload.getField(2);
+			long operationTime = source.getLong(0);
+			String op = payload.getField(3).toString();
 			if (OP_CREATE.equals(op) || OP_READ.equals(op)) {
 				after.setRowKind(RowKind.INSERT);
+				after.setOperationTime(operationTime);
 				out.collect(after);
 			} else if (OP_UPDATE.equals(op)) {
 				if (before == null) {
 					throw new IllegalStateException(String.format(REPLICA_IDENTITY_EXCEPTION, "UPDATE"));
 				}
 				before.setRowKind(RowKind.UPDATE_BEFORE);
+				before.setOperationTime(operationTime);
 				after.setRowKind(RowKind.UPDATE_AFTER);
+				after.setOperationTime(operationTime);
 				out.collect(before);
 				out.collect(after);
 			} else if (OP_DELETE.equals(op)) {
@@ -137,6 +142,7 @@ public final class DebeziumJsonDeserializationSchema implements DeserializationS
 					throw new IllegalStateException(String.format(REPLICA_IDENTITY_EXCEPTION, "DELETE"));
 				}
 				before.setRowKind(RowKind.DELETE);
+				before.setOperationTime(operationTime);
 				out.collect(before);
 			} else {
 				if (!ignoreParseErrors) {
@@ -187,6 +193,7 @@ public final class DebeziumJsonDeserializationSchema implements DeserializationS
 		DataType payload = DataTypes.ROW(
 			DataTypes.FIELD("before", databaseSchema),
 			DataTypes.FIELD("after", databaseSchema),
+			DataTypes.FIELD("source", DataTypes.ROW(DataTypes.FIELD("ts_ms", DataTypes.BIGINT()))),
 			DataTypes.FIELD("op", DataTypes.STRING()));
 		if (schemaInclude) {
 			// when Debezium Kafka connect enables "value.converter.schemas.enable",

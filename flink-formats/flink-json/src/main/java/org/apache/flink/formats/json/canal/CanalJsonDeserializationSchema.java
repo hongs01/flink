@@ -96,20 +96,18 @@ public final class CanalJsonDeserializationSchema implements DeserializationSche
 	public void deserialize(byte[] message, Collector<RowData> out) throws IOException {
 		try {
 			RowData row = jsonDeserializer.deserialize(message);
+			ArrayData data = row.getArray(0); 	// "data" field is an array of row, contains new rows
+			ArrayData old = row.getArray(1); 	 // "old" field is an array of row, contains old values
 			String type = row.getString(2).toString(); // "type" field
+			Long operationTime = row.getLong(3); // "es" field
 			if (OP_INSERT.equals(type)) {
-				// "data" field is an array of row, contains inserted rows
-				ArrayData data = row.getArray(0);
 				for (int i = 0; i < data.size(); i++) {
 					RowData insert = data.getRow(i, fieldCount);
 					insert.setRowKind(RowKind.INSERT);
+					insert.setOperationTime(operationTime);
 					out.collect(insert);
 				}
 			} else if (OP_UPDATE.equals(type)) {
-				// "data" field is an array of row, contains new rows
-				ArrayData data = row.getArray(0);
-				// "old" field is an array of row, contains old values
-				ArrayData old = row.getArray(1);
 				for (int i = 0; i < data.size(); i++) {
 					// the underlying JSON deserialization schema always produce GenericRowData.
 					GenericRowData after = (GenericRowData) data.getRow(i, fieldCount);
@@ -123,17 +121,18 @@ public final class CanalJsonDeserializationSchema implements DeserializationSche
 						}
 					}
 					before.setRowKind(RowKind.UPDATE_BEFORE);
+					before.setOperationTime(operationTime);
 					after.setRowKind(RowKind.UPDATE_AFTER);
+					after.setOperationTime(operationTime);
 					out.collect(before);
 					out.collect(after);
 				}
 			} else if (OP_DELETE.equals(type)) {
-				// "data" field is an array of row, contains deleted rows
-				ArrayData data = row.getArray(0);
 				for (int i = 0; i < data.size(); i++) {
-					RowData insert = data.getRow(i, fieldCount);
-					insert.setRowKind(RowKind.DELETE);
-					out.collect(insert);
+					RowData delete = data.getRow(i, fieldCount);
+					delete.setRowKind(RowKind.DELETE);
+					delete.setOperationTime(operationTime);
+					out.collect(delete);
 				}
 			} else {
 				if (!ignoreParseErrors) {
@@ -186,6 +185,7 @@ public final class CanalJsonDeserializationSchema implements DeserializationSche
 		return (RowType) DataTypes.ROW(
 			DataTypes.FIELD("data", DataTypes.ARRAY(databaseSchema)),
 			DataTypes.FIELD("old", DataTypes.ARRAY(databaseSchema)),
-			DataTypes.FIELD("type", DataTypes.STRING())).getLogicalType();
+			DataTypes.FIELD("type", DataTypes.STRING()),
+			DataTypes.FIELD("es", DataTypes.BIGINT())).getLogicalType();
 	}
 }

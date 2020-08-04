@@ -149,26 +149,26 @@ public class DebeziumJsonDeserializationSchemaTest {
 		// UPDATE product SET weight='5.17' WHERE id=111;
 		// DELETE FROM product WHERE id=111;
 		List<String> expected = Arrays.asList(
-			"+I(101,scooter,Small 2-wheel scooter,3.14)",
-			"+I(102,car battery,12V car battery,8.1)",
-			"+I(103,12-pack drill bits,12-pack of drill bits with sizes ranging from #40 to #3,0.8)",
-			"+I(104,hammer,12oz carpenter's hammer,0.75)",
-			"+I(105,hammer,14oz carpenter's hammer,0.875)",
-			"+I(106,hammer,16oz carpenter's hammer,1.0)",
-			"+I(107,rocks,box of assorted rocks,5.3)",
-			"+I(108,jacket,water resistent black wind breaker,0.1)",
-			"+I(109,spare tire,24 inch spare tire,22.2)",
-			"-U(106,hammer,16oz carpenter's hammer,1.0)",
-			"+U(106,hammer,18oz carpenter hammer,1.0)",
-			"-U(107,rocks,box of assorted rocks,5.3)",
-			"+U(107,rocks,box of assorted rocks,5.1)",
-			"+I(110,jacket,water resistent white wind breaker,0.2)",
-			"+I(111,scooter,Big 2-wheel scooter ,5.18)",
-			"-U(110,jacket,water resistent white wind breaker,0.2)",
-			"+U(110,jacket,new water resistent white wind breaker,0.5)",
-			"-U(111,scooter,Big 2-wheel scooter ,5.18)",
-			"+U(111,scooter,Big 2-wheel scooter ,5.17)",
-			"-D(111,scooter,Big 2-wheel scooter ,5.17)"
+			"[+I,0](101,scooter,Small 2-wheel scooter,3.14)",
+			"[+I,0](102,car battery,12V car battery,8.1)",
+			"[+I,0](103,12-pack drill bits,12-pack of drill bits with sizes ranging from #40 to #3,0.8)",
+			"[+I,0](104,hammer,12oz carpenter's hammer,0.75)",
+			"[+I,0](105,hammer,14oz carpenter's hammer,0.875)",
+			"[+I,0](106,hammer,16oz carpenter's hammer,1.0)",
+			"[+I,0](107,rocks,box of assorted rocks,5.3)",
+			"[+I,0](108,jacket,water resistent black wind breaker,0.1)",
+			"[+I,0](109,spare tire,24 inch spare tire,22.2)",
+			"[-U,1589361987000](106,hammer,16oz carpenter's hammer,1.0)",
+			"[+U,1589361987000](106,hammer,18oz carpenter hammer,1.0)",
+			"[-U,1589362099000](107,rocks,box of assorted rocks,5.3)",
+			"[+U,1589362099000](107,rocks,box of assorted rocks,5.1)",
+			"[+I,1589362210000](110,jacket,water resistent white wind breaker,0.2)",
+			"[+I,1589362243000](111,scooter,Big 2-wheel scooter ,5.18)",
+			"[-U,1589362293000](110,jacket,water resistent white wind breaker,0.2)",
+			"[+U,1589362293000](110,jacket,new water resistent white wind breaker,0.5)",
+			"[-U,1589362330000](111,scooter,Big 2-wheel scooter ,5.18)",
+			"[+U,1589362330000](111,scooter,Big 2-wheel scooter ,5.17)",
+			"[-D,1589362344000](111,scooter,Big 2-wheel scooter ,5.17)"
 		);
 		assertEquals(expected, collector.list);
 	}
@@ -186,10 +186,12 @@ public class DebeziumJsonDeserializationSchemaTest {
 
 	private static class SimpleCollector implements Collector<RowData> {
 
+		private List<RowData> rowDataList = new ArrayList<>();
 		private List<String> list = new ArrayList<>();
 
 		@Override
 		public void collect(RowData record) {
+			rowDataList.add(record);
 			list.add(record.toString());
 		}
 
