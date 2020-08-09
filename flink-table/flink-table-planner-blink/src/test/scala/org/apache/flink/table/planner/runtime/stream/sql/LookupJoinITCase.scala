@@ -98,7 +98,8 @@ class LookupJoinITCase(legacyTableSource: Boolean) extends StreamingTestBase {
            |CREATE TABLE $tableName (
            |  `age` INT,
            |  `id` BIGINT,
-           |  `name` STRING
+           |  `name` STRING,
+           |  `nominal_age` as age + 1
            |) WITH (
            |  'connector' = 'values',
            |  'data-id' = '$dataId'
@@ -125,7 +126,8 @@ class LookupJoinITCase(legacyTableSource: Boolean) extends StreamingTestBase {
 
   @Test
   def testJoinTemporalTable(): Unit = {
-    val sql = "SELECT T.id, T.len, T.content, D.name FROM src AS T JOIN user_table " +
+    val sql = "SELECT T.id, T.len, T.content, D.name, D.nominal_age " +
+      "FROM src AS T JOIN user_table " +
       "for system_time as of T.proctime AS D ON T.id = D.id"
 
     val sink = new TestingAppendSink
@@ -136,6 +138,47 @@ class LookupJoinITCase(legacyTableSource: Boolean) extends StreamingTestBase {
       "1,12,Julian,Julian",
       "2,15,Hello,Jark",
       "3,15,Fabian,Fabian")
+    assertEquals(expected.sorted, sink.getAppendResults.sorted)
+  }
+
+  @Test
+  def testJoinTemporalTableWithComputedColumn(): Unit = {
+    if (legacyTableSource) {
+      //Computed column do not support in legacyTableSource.
+      return
+    }
+    val sql = s"SELECT T.id, T.len, T.content, D.name, D.age, D.nominal_age " +
+      "FROM src AS T JOIN user_table " +
+      "for system_time as of T.proctime AS D ON T.id = D.id"
+
+    val sink = new TestingAppendSink
+    tEnv.sqlQuery(sql).toAppendStream[Row].addSink(sink)
+    env.execute()
+
+    val expected = Seq(
+      "1,12,Julian,Julian,11,12",
+      "2,15,Hello,Jark,22,23",
+      "3,15,Fabian,Fabian,33,34")
+    assertEquals(expected.sorted, sink.getAppendResults.sorted)
+  }
+
+  @Test
+  def testJoinTemporalTableWithComputedColumnAndPushDown(): Unit = {
+    if (legacyTableSource) {
+      //Computed column do not support in legacyTableSource.
+      return
+    }
+    val sql = s"SELECT T.id, T.len, T.content, D.name, D.age, D.nominal_age " +
+      "FROM src AS T JOIN user_table " +
+      "for system_time as of T.proctime AS D ON T.id = D.id and D.nominal_age > 12"
+
+    val sink = new TestingAppendSink
+    tEnv.sqlQuery(sql).toAppendStream[Row].addSink(sink)
+    env.execute()
+
+    val expected = Seq(
+      "2,15,Hello,Jark,22,23",
+      "3,15,Fabian,Fabian,33,34")
     assertEquals(expected.sorted, sink.getAppendResults.sorted)
   }
 

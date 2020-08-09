@@ -16,7 +16,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 <Root>
-  <TestCase name="testAvoidAggregatePushDown[LegacyTableSource=false]">
+  <TestCase name="testAvoidAggregatePushDown[LegacyTableSource=false, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[
 SELECT b, count(a), sum(c), sum(d)
@@ -60,7 +60,52 @@ GroupAggregate(groupBy=[b], select=[b, COUNT_RETRACT(a) AS EXPR$1, SUM_RETRACT(c
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTableWithCalcPushDown[LegacyTableSource=true]">
+  <TestCase name="testAvoidAggregatePushDown[LegacyTableSource=false, useComputedColumn=true]">
+    <Resource name="sql">
+      <![CDATA[
+SELECT b, count(a), sum(c), sum(d)
+FROM (
+SELECT T.* FROM (
+SELECT b, a, sum(c) c, sum(d) d, PROCTIME() as proc
+FROM T1
+GROUP BY a, b
+      ) AS T
+JOIN LookupTable FOR SYSTEM_TIME AS OF T.proc AS D
+ON T.a = D.id
+WHERE D.age > 10
+      ) AS T
+GROUP BY b
+      ]]>
+    </Resource>
+    <Resource name="planBefore">
+      <![CDATA[
+LogicalAggregate(group=[{0}], EXPR$1=[COUNT($1)], EXPR$2=[SUM($2)], EXPR$3=[SUM($3)])
++- LogicalProject(b=[$0], a=[$1], c=[$2], d=[$3])
+   +- LogicalFilter(condition=[>($7, 10)])
+      +- LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{1, 4}])
+         :- LogicalProject(b=[$1], a=[$0], c=[$2], d=[$3], proc=[PROCTIME()])
+         :  +- LogicalAggregate(group=[{0, 1}], c=[SUM($2)], d=[SUM($3)])
+         :     +- LogicalTableScan(table=[[default_catalog, default_database, T1]])
+         +- LogicalFilter(condition=[=($cor0.a, $0)])
+            +- LogicalSnapshot(period=[$cor0.proc])
+               +- LogicalProject(id=[$0], name=[$1], age=[$2], nominal_age=[+($2, 1)])
+                  +- LogicalTableScan(table=[[default_catalog, default_database, LookupTable]])
+]]>
+    </Resource>
+    <Resource name="planAfter">
+      <![CDATA[
+GroupAggregate(groupBy=[b], select=[b, COUNT_RETRACT(a) AS EXPR$1, SUM_RETRACT(c) AS EXPR$2, SUM_RETRACT(d) AS EXPR$3])
++- Exchange(distribution=[hash[b]])
+   +- Calc(select=[b, a, c, d])
+      +- LookupJoin(table=[default_catalog.default_database.LookupTable], joinType=[InnerJoin], async=[false], lookup=[id=a], where=[>(age, 10)], select=[b, a, c, d, id])
+         +- Calc(select=[b, a, c, d])
+            +- GroupAggregate(groupBy=[a, b], select=[a, b, SUM(c) AS c, SUM(d) AS d])
+               +- Exchange(distribution=[hash[a, b]])
+                  +- DataStreamScan(table=[[default_catalog, default_database, T1]], fields=[a, b, c, d])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testJoinTemporalTableWithCalcPushDown[LegacyTableSource=true, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[
 SELECT * FROM MyTable AS T
@@ -88,7 +133,7 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, n
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testAvoidAggregatePushDown[LegacyTableSource=true]">
+  <TestCase name="testAvoidAggregatePushDown[LegacyTableSource=true, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[
 SELECT b, count(a), sum(c), sum(d)
@@ -132,7 +177,7 @@ GroupAggregate(groupBy=[b], select=[b, COUNT_RETRACT(a) AS EXPR$1, SUM_RETRACT(c
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTable[LegacyTableSource=false]">
+  <TestCase name="testJoinTemporalTable[LegacyTableSource=false, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[SELECT * FROM MyTable AS T JOIN LookupTable FOR SYSTEM_TIME AS OF T.proctime AS D ON T.a = D.id]]>
     </Resource>
@@ -154,7 +199,30 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, n
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTable[LegacyTableSource=true]">
+  <TestCase name="testJoinTemporalTable[LegacyTableSource=false, useComputedColumn=true]">
+    <Resource name="sql">
+      <![CDATA[SELECT * FROM MyTable AS T JOIN LookupTable FOR SYSTEM_TIME AS OF T.proctime AS D ON T.a = D.id]]>
+    </Resource>
+    <Resource name="planBefore">
+      <![CDATA[
+LogicalProject(a=[$0], b=[$1], c=[$2], proctime=[$3], rowtime=[$4], id=[$5], name=[$6], age=[$7], nominal_age=[$8])
++- LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{0, 3}])
+   :- LogicalTableScan(table=[[default_catalog, default_database, MyTable]])
+   +- LogicalFilter(condition=[=($cor0.a, $0)])
+      +- LogicalSnapshot(period=[$cor0.proctime])
+         +- LogicalProject(id=[$0], name=[$1], age=[$2], nominal_age=[+($2, 1)])
+            +- LogicalTableScan(table=[[default_catalog, default_database, LookupTable]])
+]]>
+    </Resource>
+    <Resource name="planAfter">
+      <![CDATA[
+Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, name, age, nominal_age])
++- LookupJoin(table=[default_catalog.default_database.LookupTable], joinType=[InnerJoin], async=[false], lookup=[id=a], select=[a, b, c, proctime, rowtime, id, name, age, +(age, 1) AS nominal_age])
+   +- DataStreamScan(table=[[default_catalog, default_database, MyTable]], fields=[a, b, c, proctime, rowtime])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testJoinTemporalTable[LegacyTableSource=true, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[SELECT * FROM MyTable AS T JOIN LookupTable FOR SYSTEM_TIME AS OF T.proctime AS D ON T.a = D.id]]>
     </Resource>
@@ -176,7 +244,7 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, n
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTableWithCalcPushDown[LegacyTableSource=false]">
+  <TestCase name="testJoinTemporalTableWithCalcPushDown[LegacyTableSource=false, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[
 SELECT * FROM MyTable AS T
@@ -204,7 +272,36 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, n
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTableWithFilterPushDown[LegacyTableSource=false]">
+  <TestCase name="testJoinTemporalTableWithCalcPushDown[LegacyTableSource=false, useComputedColumn=true]">
+    <Resource name="sql">
+      <![CDATA[
+SELECT * FROM MyTable AS T
+JOIN LookupTable FOR SYSTEM_TIME AS OF T.proctime AS D
+ON T.a = D.id AND D.age = 10
+WHERE cast(D.name as bigint) > 1000
+      ]]>
+    </Resource>
+    <Resource name="planBefore">
+      <![CDATA[
+LogicalProject(a=[$0], b=[$1], c=[$2], proctime=[$3], rowtime=[$4], id=[$5], name=[$6], age=[$7], nominal_age=[$8])
++- LogicalFilter(condition=[>(CAST($6):BIGINT, 1000)])
+   +- LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{0, 3}])
+      :- LogicalTableScan(table=[[default_catalog, default_database, MyTable]])
+      +- LogicalFilter(condition=[AND(=($cor0.a, $0), =($2, 10))])
+         +- LogicalSnapshot(period=[$cor0.proctime])
+            +- LogicalProject(id=[$0], name=[$1], age=[$2], nominal_age=[+($2, 1)])
+               +- LogicalTableScan(table=[[default_catalog, default_database, LookupTable]])
+]]>
+    </Resource>
+    <Resource name="planAfter">
+      <![CDATA[
+Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, name, CAST(10) AS age, nominal_age])
++- LookupJoin(table=[default_catalog.default_database.LookupTable], joinType=[InnerJoin], async=[false], lookup=[age=10, id=a], where=[AND(=(age, 10), >(CAST(name), 1000))], select=[a, b, c, proctime, rowtime, id, name, age, +(age, 1) AS nominal_age])
+   +- DataStreamScan(table=[[default_catalog, default_database, MyTable]], fields=[a, b, c, proctime, rowtime])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testJoinTemporalTableWithFilterPushDown[LegacyTableSource=false, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[
 SELECT * FROM MyTable AS T
@@ -233,7 +330,37 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, n
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTableWithFilterPushDown[LegacyTableSource=true]">
+  <TestCase name="testJoinTemporalTableWithFilterPushDown[LegacyTableSource=false, useComputedColumn=true]">
+    <Resource name="sql">
+      <![CDATA[
+SELECT * FROM MyTable AS T
+JOIN LookupTable FOR SYSTEM_TIME AS OF T.proctime AS D
+ON T.a = D.id AND D.age = 10
+WHERE T.c > 1000
+      ]]>
+    </Resource>
+    <Resource name="planBefore">
+      <![CDATA[
+LogicalProject(a=[$0], b=[$1], c=[$2], proctime=[$3], rowtime=[$4], id=[$5], name=[$6], age=[$7], nominal_age=[$8])
++- LogicalFilter(condition=[>($2, 1000)])
+   +- LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{0, 3}])
+      :- LogicalTableScan(table=[[default_catalog, default_database, MyTable]])
+      +- LogicalFilter(condition=[AND(=($cor0.a, $0), =($2, 10))])
+         +- LogicalSnapshot(period=[$cor0.proctime])
+            +- LogicalProject(id=[$0], name=[$1], age=[$2], nominal_age=[+($2, 1)])
+               +- LogicalTableScan(table=[[default_catalog, default_database, LookupTable]])
+]]>
+    </Resource>
+    <Resource name="planAfter">
+      <![CDATA[
+Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, name, CAST(10) AS age, nominal_age])
++- LookupJoin(table=[default_catalog.default_database.LookupTable], joinType=[InnerJoin], async=[false], lookup=[age=10, id=a], where=[=(age, 10)], select=[a, b, c, proctime, rowtime, id, name, age, +(age, 1) AS nominal_age])
+   +- Calc(select=[a, b, c, proctime, rowtime], where=[>(c, 1000)])
+      +- DataStreamScan(table=[[default_catalog, default_database, MyTable]], fields=[a, b, c, proctime, rowtime])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testJoinTemporalTableWithFilterPushDown[LegacyTableSource=true, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[
 SELECT * FROM MyTable AS T
@@ -262,7 +389,7 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, n
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTableWithFunctionAndConstantCondition[LegacyTableSource=false]">
+  <TestCase name="testJoinTemporalTableWithFunctionAndConstantCondition[LegacyTableSource=false, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[
 SELECT * FROM MyTable AS T
@@ -288,7 +415,34 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, n
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTableWithNestedQuery[LegacyTableSource=true]">
+  <TestCase name="testJoinTemporalTableWithFunctionAndConstantCondition[LegacyTableSource=false, useComputedColumn=true]">
+    <Resource name="sql">
+      <![CDATA[
+SELECT * FROM MyTable AS T
+JOIN LookupTable FOR SYSTEM_TIME AS OF T.proctime AS D
+ON T.b = concat(D.name, '!') AND D.age = 11
+      ]]>
+    </Resource>
+    <Resource name="planBefore">
+      <![CDATA[
+LogicalProject(a=[$0], b=[$1], c=[$2], proctime=[$3], rowtime=[$4], id=[$5], name=[$6], age=[$7], nominal_age=[$8])
++- LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{1, 3}])
+   :- LogicalTableScan(table=[[default_catalog, default_database, MyTable]])
+   +- LogicalFilter(condition=[AND(=($cor0.b, CONCAT($1, _UTF-16LE'!')), =($2, 11))])
+      +- LogicalSnapshot(period=[$cor0.proctime])
+         +- LogicalProject(id=[$0], name=[$1], age=[$2], nominal_age=[+($2, 1)])
+            +- LogicalTableScan(table=[[default_catalog, default_database, LookupTable]])
+]]>
+    </Resource>
+    <Resource name="planAfter">
+      <![CDATA[
+Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, name, CAST(11) AS age, nominal_age])
++- LookupJoin(table=[default_catalog.default_database.LookupTable], joinType=[InnerJoin], async=[false], lookup=[age=11], where=[=(age, 11)], joinCondition=[=(b, $f4)], select=[a, b, c, proctime, rowtime, id, name, CAST(11) AS age, +(age, 1) AS nominal_age, CONCAT(name, _UTF-16LE'!') AS $f4])
+   +- DataStreamScan(table=[[default_catalog, default_database, MyTable]], fields=[a, b, c, proctime, rowtime])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testJoinTemporalTableWithNestedQuery[LegacyTableSource=true, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[SELECT * FROM (SELECT a, b, proctime FROM MyTable WHERE c > 1000) AS T JOIN LookupTable FOR SYSTEM_TIME AS OF T.proctime AS D ON T.a = D.id]]>
     </Resource>
@@ -313,7 +467,7 @@ Calc(select=[a, b, PROCTIME_MATERIALIZE(proctime) AS proctime, id, name, age])
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTableWithFunctionAndConstantCondition[LegacyTableSource=true]">
+  <TestCase name="testJoinTemporalTableWithFunctionAndConstantCondition[LegacyTableSource=true, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[
 SELECT * FROM MyTable AS T
@@ -339,7 +493,7 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, n
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTableWithFunctionAndReferenceCondition[LegacyTableSource=false]">
+  <TestCase name="testJoinTemporalTableWithFunctionAndReferenceCondition[LegacyTableSource=false, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[
 SELECT * FROM MyTable AS T
@@ -367,7 +521,36 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, n
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTableWithFunctionAndReferenceCondition[LegacyTableSource=true]">
+  <TestCase name="testJoinTemporalTableWithFunctionAndReferenceCondition[LegacyTableSource=false, useComputedColumn=true]">
+    <Resource name="sql">
+      <![CDATA[
+SELECT * FROM MyTable AS T
+JOIN LookupTable FOR SYSTEM_TIME AS OF T.proctime AS D
+ON T.a = D.id AND T.b = concat(D.name, '!')
+WHERE D.name LIKE 'Jack%'
+      ]]>
+    </Resource>
+    <Resource name="planBefore">
+      <![CDATA[
+LogicalProject(a=[$0], b=[$1], c=[$2], proctime=[$3], rowtime=[$4], id=[$5], name=[$6], age=[$7], nominal_age=[$8])
++- LogicalFilter(condition=[LIKE($6, _UTF-16LE'Jack%')])
+   +- LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{0, 1, 3}])
+      :- LogicalTableScan(table=[[default_catalog, default_database, MyTable]])
+      +- LogicalFilter(condition=[AND(=($cor0.a, $0), =($cor0.b, CONCAT($1, _UTF-16LE'!')))])
+         +- LogicalSnapshot(period=[$cor0.proctime])
+            +- LogicalProject(id=[$0], name=[$1], age=[$2], nominal_age=[+($2, 1)])
+               +- LogicalTableScan(table=[[default_catalog, default_database, LookupTable]])
+]]>
+    </Resource>
+    <Resource name="planAfter">
+      <![CDATA[
+Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, name, age, nominal_age])
++- LookupJoin(table=[default_catalog.default_database.LookupTable], joinType=[InnerJoin], async=[false], lookup=[id=a], where=[LIKE(name, _UTF-16LE'Jack%')], joinCondition=[=(b, $f4)], select=[a, b, c, proctime, rowtime, id, name, age, +(age, 1) AS nominal_age, CONCAT(name, _UTF-16LE'!') AS $f4])
+   +- DataStreamScan(table=[[default_catalog, default_database, MyTable]], fields=[a, b, c, proctime, rowtime])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testJoinTemporalTableWithFunctionAndReferenceCondition[LegacyTableSource=true, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[
 SELECT * FROM MyTable AS T
@@ -395,7 +578,7 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, n
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTableWithMultiFunctionAndConstantCondition[LegacyTableSource=false]">
+  <TestCase name="testJoinTemporalTableWithMultiFunctionAndConstantCondition[LegacyTableSource=false, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[
 SELECT * FROM MyTable AS T
@@ -421,7 +604,34 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, n
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTableWithMultiFunctionAndConstantCondition[LegacyTableSource=true]">
+  <TestCase name="testJoinTemporalTableWithMultiFunctionAndConstantCondition[LegacyTableSource=false, useComputedColumn=true]">
+    <Resource name="sql">
+      <![CDATA[
+SELECT * FROM MyTable AS T
+JOIN LookupTable FOR SYSTEM_TIME AS OF T.proctime AS D
+ON T.a = D.id + 1 AND T.b = concat(D.name, '!') AND D.age = 11
+      ]]>
+    </Resource>
+    <Resource name="planBefore">
+      <![CDATA[
+LogicalProject(a=[$0], b=[$1], c=[$2], proctime=[$3], rowtime=[$4], id=[$5], name=[$6], age=[$7], nominal_age=[$8])
++- LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{0, 1, 3}])
+   :- LogicalTableScan(table=[[default_catalog, default_database, MyTable]])
+   +- LogicalFilter(condition=[AND(=($cor0.a, +($0, 1)), =($cor0.b, CONCAT($1, _UTF-16LE'!')), =($2, 11))])
+      +- LogicalSnapshot(period=[$cor0.proctime])
+         +- LogicalProject(id=[$0], name=[$1], age=[$2], nominal_age=[+($2, 1)])
+            +- LogicalTableScan(table=[[default_catalog, default_database, LookupTable]])
+]]>
+    </Resource>
+    <Resource name="planAfter">
+      <![CDATA[
+Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, name, CAST(11) AS age, nominal_age])
++- LookupJoin(table=[default_catalog.default_database.LookupTable], joinType=[InnerJoin], async=[false], lookup=[age=11], where=[=(age, 11)], joinCondition=[AND(=(a, $f4), =(b, $f5))], select=[a, b, c, proctime, rowtime, id, name, CAST(11) AS age, +(age, 1) AS nominal_age, +(id, 1) AS $f4, CONCAT(name, _UTF-16LE'!') AS $f5])
+   +- DataStreamScan(table=[[default_catalog, default_database, MyTable]], fields=[a, b, c, proctime, rowtime])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testJoinTemporalTableWithMultiFunctionAndConstantCondition[LegacyTableSource=true, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[
 SELECT * FROM MyTable AS T
@@ -447,7 +657,7 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, n
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTableWithMultiIndexColumn[LegacyTableSource=false]">
+  <TestCase name="testJoinTemporalTableWithMultiIndexColumn[LegacyTableSource=false, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[
 SELECT * FROM MyTable AS T
@@ -476,7 +686,37 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, C
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTableWithMultiIndexColumn[LegacyTableSource=true]">
+  <TestCase name="testJoinTemporalTableWithMultiIndexColumn[LegacyTableSource=false, useComputedColumn=true]">
+    <Resource name="sql">
+      <![CDATA[
+SELECT * FROM MyTable AS T
+JOIN LookupTable FOR SYSTEM_TIME AS OF T.proctime AS D
+ON T.a = D.id AND D.age = 10 AND D.name = 'AAA'
+WHERE T.c > 1000
+      ]]>
+    </Resource>
+    <Resource name="planBefore">
+      <![CDATA[
+LogicalProject(a=[$0], b=[$1], c=[$2], proctime=[$3], rowtime=[$4], id=[$5], name=[$6], age=[$7], nominal_age=[$8])
++- LogicalFilter(condition=[>($2, 1000)])
+   +- LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{0, 3}])
+      :- LogicalTableScan(table=[[default_catalog, default_database, MyTable]])
+      +- LogicalFilter(condition=[AND(=($cor0.a, $0), =($2, 10), =($1, _UTF-16LE'AAA'))])
+         +- LogicalSnapshot(period=[$cor0.proctime])
+            +- LogicalProject(id=[$0], name=[$1], age=[$2], nominal_age=[+($2, 1)])
+               +- LogicalTableScan(table=[[default_catalog, default_database, LookupTable]])
+]]>
+    </Resource>
+    <Resource name="planAfter">
+      <![CDATA[
+Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, CAST(_UTF-16LE'AAA':VARCHAR(2147483647) CHARACTER SET "UTF-16LE") AS name, CAST(10) AS age, nominal_age])
++- LookupJoin(table=[default_catalog.default_database.LookupTable], joinType=[InnerJoin], async=[false], lookup=[age=10, name=_UTF-16LE'AAA', id=a], where=[AND(=(age, 10), =(name, _UTF-16LE'AAA':VARCHAR(2147483647) CHARACTER SET "UTF-16LE"))], select=[a, b, c, proctime, rowtime, id, name, age, +(age, 1) AS nominal_age])
+   +- Calc(select=[a, b, c, proctime, rowtime], where=[>(c, 1000)])
+      +- DataStreamScan(table=[[default_catalog, default_database, MyTable]], fields=[a, b, c, proctime, rowtime])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testJoinTemporalTableWithMultiIndexColumn[LegacyTableSource=true, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[
 SELECT * FROM MyTable AS T
@@ -505,7 +745,7 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, C
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTableWithNestedQuery[LegacyTableSource=false]">
+  <TestCase name="testJoinTemporalTableWithNestedQuery[LegacyTableSource=false, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[SELECT * FROM (SELECT a, b, proctime FROM MyTable WHERE c > 1000) AS T JOIN LookupTable FOR SYSTEM_TIME AS OF T.proctime AS D ON T.a = D.id]]>
     </Resource>
@@ -530,7 +770,33 @@ Calc(select=[a, b, PROCTIME_MATERIALIZE(proctime) AS proctime, id, name, age])
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTableWithProjectionPushDown[LegacyTableSource=false]">
+  <TestCase name="testJoinTemporalTableWithNestedQuery[LegacyTableSource=false, useComputedColumn=true]">
+    <Resource name="sql">
+      <![CDATA[SELECT * FROM (SELECT a, b, proctime FROM MyTable WHERE c > 1000) AS T JOIN LookupTable FOR SYSTEM_TIME AS OF T.proctime AS D ON T.a = D.id]]>
+    </Resource>
+    <Resource name="planBefore">
+      <![CDATA[
+LogicalProject(a=[$0], b=[$1], proctime=[$2], id=[$3], name=[$4], age=[$5], nominal_age=[$6])
++- LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{0, 2}])
+   :- LogicalProject(a=[$0], b=[$1], proctime=[$3])
+   :  +- LogicalFilter(condition=[>($2, 1000)])
+   :     +- LogicalTableScan(table=[[default_catalog, default_database, MyTable]])
+   +- LogicalFilter(condition=[=($cor0.a, $0)])
+      +- LogicalSnapshot(period=[$cor0.proctime])
+         +- LogicalProject(id=[$0], name=[$1], age=[$2], nominal_age=[+($2, 1)])
+            +- LogicalTableScan(table=[[default_catalog, default_database, LookupTable]])
+]]>
+    </Resource>
+    <Resource name="planAfter">
+      <![CDATA[
+Calc(select=[a, b, PROCTIME_MATERIALIZE(proctime) AS proctime, id, name, age, nominal_age])
++- LookupJoin(table=[default_catalog.default_database.LookupTable], joinType=[InnerJoin], async=[false], lookup=[id=a], select=[a, b, proctime, id, name, age, +(age, 1) AS nominal_age])
+   +- Calc(select=[a, b, proctime], where=[>(c, 1000)])
+      +- DataStreamScan(table=[[default_catalog, default_database, MyTable]], fields=[a, b, c, proctime, rowtime])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testJoinTemporalTableWithProjectionPushDown[LegacyTableSource=false, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[
 SELECT T.*, D.id
@@ -557,7 +823,7 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id])
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testLeftJoinTemporalTable[LegacyTableSource=true]">
+  <TestCase name="testLeftJoinTemporalTable[LegacyTableSource=true, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[SELECT * FROM MyTable AS T LEFT JOIN LookupTable FOR SYSTEM_TIME AS OF T.proctime AS D ON T.a = D.id]]>
     </Resource>
@@ -579,7 +845,35 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, n
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTableWithProjectionPushDown[LegacyTableSource=true]">
+  <TestCase name="testJoinTemporalTableWithProjectionPushDown[LegacyTableSource=false, useComputedColumn=true]">
+    <Resource name="sql">
+      <![CDATA[
+SELECT T.*, D.id
+FROM MyTable AS T
+JOIN LookupTable FOR SYSTEM_TIME AS OF T.proctime AS D
+ON T.a = D.id
+      ]]>
+    </Resource>
+    <Resource name="planBefore">
+      <![CDATA[
+LogicalProject(a=[$0], b=[$1], c=[$2], proctime=[$3], rowtime=[$4], id=[$5])
++- LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{0, 3}])
+   :- LogicalTableScan(table=[[default_catalog, default_database, MyTable]])
+   +- LogicalFilter(condition=[=($cor0.a, $0)])
+      +- LogicalSnapshot(period=[$cor0.proctime])
+         +- LogicalProject(id=[$0], name=[$1], age=[$2], nominal_age=[+($2, 1)])
+            +- LogicalTableScan(table=[[default_catalog, default_database, LookupTable]])
+]]>
+    </Resource>
+    <Resource name="planAfter">
+      <![CDATA[
+Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id])
++- LookupJoin(table=[default_catalog.default_database.LookupTable], joinType=[InnerJoin], async=[false], lookup=[id=a], select=[a, b, c, proctime, rowtime, id, name, age, +(age, 1) AS nominal_age])
+   +- DataStreamScan(table=[[default_catalog, default_database, MyTable]], fields=[a, b, c, proctime, rowtime])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testJoinTemporalTableWithProjectionPushDown[LegacyTableSource=true, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[
 SELECT T.*, D.id
@@ -606,7 +900,7 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id])
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTableWithTrueCondition[LegacyTableSource=false]">
+  <TestCase name="testJoinTemporalTableWithTrueCondition[LegacyTableSource=false, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[
 SELECT * FROM MyTable AS T
@@ -634,7 +928,36 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, n
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testJoinTemporalTableWithTrueCondition[LegacyTableSource=true]">
+  <TestCase name="testJoinTemporalTableWithTrueCondition[LegacyTableSource=false, useComputedColumn=true]">
+    <Resource name="sql">
+      <![CDATA[
+SELECT * FROM MyTable AS T
+JOIN LookupTable FOR SYSTEM_TIME AS OF T.proctime AS D
+ON true
+WHERE T.c > 1000
+      ]]>
+    </Resource>
+    <Resource name="planBefore">
+      <![CDATA[
+LogicalProject(a=[$0], b=[$1], c=[$2], proctime=[$3], rowtime=[$4], id=[$5], name=[$6], age=[$7], nominal_age=[$8])
++- LogicalFilter(condition=[>($2, 1000)])
+   +- LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{3}])
+      :- LogicalTableScan(table=[[default_catalog, default_database, MyTable]])
+      +- LogicalSnapshot(period=[$cor0.proctime])
+         +- LogicalProject(id=[$0], name=[$1], age=[$2], nominal_age=[+($2, 1)])
+            +- LogicalTableScan(table=[[default_catalog, default_database, LookupTable]])
+]]>
+    </Resource>
+    <Resource name="planAfter">
+      <![CDATA[
+Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, name, age, nominal_age])
++- LookupJoin(table=[default_catalog.default_database.LookupTable], joinType=[InnerJoin], async=[false], lookup=[], select=[a, b, c, proctime, rowtime, id, name, age, +(age, 1) AS nominal_age])
+   +- Calc(select=[a, b, c, proctime, rowtime], where=[>(c, 1000)])
+      +- DataStreamScan(table=[[default_catalog, default_database, MyTable]], fields=[a, b, c, proctime, rowtime])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testJoinTemporalTableWithTrueCondition[LegacyTableSource=true, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[
 SELECT * FROM MyTable AS T
@@ -662,7 +985,7 @@ Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, n
 ]]>
     </Resource>
   </TestCase>
-  <TestCase name="testLeftJoinTemporalTable[LegacyTableSource=false]">
+  <TestCase name="testLeftJoinTemporalTable[LegacyTableSource=false, useComputedColumn=false]">
     <Resource name="sql">
       <![CDATA[SELECT * FROM MyTable AS T LEFT JOIN LookupTable FOR SYSTEM_TIME AS OF T.proctime AS D ON T.a = D.id]]>
     </Resource>
@@ -680,6 +1003,29 @@ LogicalProject(a=[$0], b=[$1], c=[$2], proctime=[$3], rowtime=[$4], id=[$5], nam
       <![CDATA[
 Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, name, age])
 +- LookupJoin(table=[default_catalog.default_database.LookupTable], joinType=[LeftOuterJoin], async=[false], lookup=[id=a], select=[a, b, c, proctime, rowtime, id, name, age])
+   +- DataStreamScan(table=[[default_catalog, default_database, MyTable]], fields=[a, b, c, proctime, rowtime])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testLeftJoinTemporalTable[LegacyTableSource=false, useComputedColumn=true]">
+    <Resource name="sql">
+      <![CDATA[SELECT * FROM MyTable AS T LEFT JOIN LookupTable FOR SYSTEM_TIME AS OF T.proctime AS D ON T.a = D.id]]>
+    </Resource>
+    <Resource name="planBefore">
+      <![CDATA[
+LogicalProject(a=[$0], b=[$1], c=[$2], proctime=[$3], rowtime=[$4], id=[$5], name=[$6], age=[$7], nominal_age=[$8])
++- LogicalCorrelate(correlation=[$cor0], joinType=[left], requiredColumns=[{0, 3}])
+   :- LogicalTableScan(table=[[default_catalog, default_database, MyTable]])
+   +- LogicalFilter(condition=[=($cor0.a, $0)])
+      +- LogicalSnapshot(period=[$cor0.proctime])
+         +- LogicalProject(id=[$0], name=[$1], age=[$2], nominal_age=[+($2, 1)])
+            +- LogicalTableScan(table=[[default_catalog, default_database, LookupTable]])
+]]>
+    </Resource>
+    <Resource name="planAfter">
+      <![CDATA[
+Calc(select=[a, b, c, PROCTIME_MATERIALIZE(proctime) AS proctime, rowtime, id, name, age, nominal_age])
++- LookupJoin(table=[default_catalog.default_database.LookupTable], joinType=[LeftOuterJoin], async=[false], lookup=[id=a], select=[a, b, c, proctime, rowtime, id, name, age, +(age, 1) AS nominal_age])
    +- DataStreamScan(table=[[default_catalog, default_database, MyTable]], fields=[a, b, c, proctime, rowtime])
 ]]>
     </Resource>

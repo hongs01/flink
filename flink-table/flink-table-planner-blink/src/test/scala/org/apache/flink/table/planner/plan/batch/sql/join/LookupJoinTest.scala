@@ -41,7 +41,7 @@ import _root_.scala.collection.JavaConversions._
  * [[org.apache.flink.table.connector.source.LookupTableSource]] should be identical.
  */
 @RunWith(classOf[Parameterized])
-class LookupJoinTest(legacyTableSource: Boolean) extends TableTestBase {
+class LookupJoinTest(legacyTableSource: Boolean, useComputedColumn: Boolean) extends TableTestBase {
   private val testUtil = batchTestUtil()
 
   @Before
@@ -54,12 +54,17 @@ class LookupJoinTest(legacyTableSource: Boolean) extends TableTestBase {
     if (legacyTableSource) {
       TestTemporalTable.createTemporaryTable(testUtil.tableEnv, "LookupTable", isBounded = true)
     } else {
+      val computedColumn = useComputedColumn match {
+        case true => ", `nominal_age` as `age` + 1"
+        case _ => ""
+      }
       testUtil.addTable(
-        """
+        s"""
           |CREATE TABLE LookupTable (
           |  `id` INT,
           |  `name` STRING,
           |  `age` INT
+          |  $computedColumn
           |) WITH (
           |  'connector' = 'values',
           |  'bounded' = 'true'
@@ -85,7 +90,7 @@ class LookupJoinTest(legacyTableSource: Boolean) extends TableTestBase {
 
     // only support left or inner join
     // Calcite does not allow FOR SYSTEM_TIME AS OF non-nullable left table field to Right Join.
-    // There is a exception:
+    // There is an exception:
     // java.lang.AssertionError
     //    at SqlToRelConverter.getCorrelationUse(SqlToRelConverter.java:2517)
     //    at SqlToRelConverter.createJoin(SqlToRelConverter.java:2426)
@@ -347,8 +352,11 @@ class LookupJoinTest(legacyTableSource: Boolean) extends TableTestBase {
 }
 
 object LookupJoinTest {
-  @Parameterized.Parameters(name = "LegacyTableSource={0}")
+  @Parameterized.Parameters(name = "LegacyTableSource={0}, useComputedColumn={1}")
   def parameters(): JCollection[Array[Object]] = {
-    Seq[Array[AnyRef]](Array(JBoolean.TRUE), Array(JBoolean.FALSE))
+    Seq[Array[AnyRef]](
+      Array(JBoolean.TRUE, JBoolean.FALSE),
+      Array(JBoolean.FALSE, JBoolean.FALSE),
+      Array(JBoolean.FALSE, JBoolean.TRUE))
   }
 }

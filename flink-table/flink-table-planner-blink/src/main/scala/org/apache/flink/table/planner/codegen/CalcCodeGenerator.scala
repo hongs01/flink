@@ -173,10 +173,7 @@ object CalcCodeGenerator {
          |""".stripMargin
     }
 
-    if (condition.isEmpty && onlyFilter) {
-      throw new TableException("This calc has no useful projection and no filter. " +
-        "It should be removed by CalcRemoveRule.")
-    } else if (condition.isEmpty) { // only projection
+    if (condition.isEmpty) { // only projection
       val projectionCode = produceProjectionCode
       s"""
          |${if (eagerInputUnboxingCode) ctx.reuseInputUnboxingCode() else ""}

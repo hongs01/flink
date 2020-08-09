@@ -96,7 +96,8 @@ class LookupJoinITCase(legacyTableSource: Boolean, isAsyncMode: Boolean) extends
            |CREATE TABLE $tableName (
            |  `age` INT,
            |  `id` BIGINT,
-           |  `name` STRING
+           |  `name` STRING,
+           |  `nominal_age` as age + 1
            |) WITH (
            |  'connector' = 'values',
            |  'data-id' = '$dataId',
@@ -148,6 +149,39 @@ class LookupJoinITCase(legacyTableSource: Boolean, isAsyncMode: Boolean) extends
       BatchTestBase.row(1, 12, "Julian", "Julian"),
       BatchTestBase.row(2, 15, "Hello", "Jark"),
       BatchTestBase.row(3, 15, "Fabian", "Fabian"))
+    checkResult(sql, expected)
+  }
+
+  @Test
+  def testJoinTemporalTableWithComputedColumn(): Unit = {
+    if (legacyTableSource) {
+      //Computed column do not support in legacyTableSource.
+      return
+    }
+    val sql = s"SELECT T.id, T.len, T.content, D.name, D.age " +
+      "FROM T JOIN userTable " +
+      "for system_time as of T.proctime AS D ON T.id = D.id"
+
+    val expected = Seq(
+      BatchTestBase.row(1, 12, "Julian", "Julian", 11, 12),
+      BatchTestBase.row(2, 15, "Hello", "Jark", 22, 23),
+      BatchTestBase.row(3, 15, "Fabian", "Fabian", 33, 34))
+    checkResult(sql, expected)
+  }
+
+  @Test
+  def testJoinTemporalTableWithComputedColumnAndPushDown(): Unit = {
+    if (legacyTableSource) {
+      //Computed column do not support in legacyTableSource.
+      return
+    }
+    val sql = s"SELECT T.id, T.len, T.content, D.name, D.age, D.nominal_age " +
+      "FROM T JOIN userTable " +
+      "for system_time as of T.proctime AS D ON T.id = D.id and D.nominal_age > 12"
+
+    val expected = Seq(
+      BatchTestBase.row(2, 15, "Hello", "Jark", 22, 23),
+      BatchTestBase.row(3, 15, "Fabian", "Fabian", 33, 34))
     checkResult(sql, expected)
   }
 
