@@ -33,12 +33,10 @@ import org.apache.flink.table.planner.utils.TableTestBase
 import org.apache.flink.table.sources._
 import org.apache.flink.table.types.DataType
 import org.apache.flink.table.utils.EncodingUtils
-
 import org.junit.Assert.{assertTrue, fail}
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
 import org.junit.{Before, Test}
-
 import _root_.java.lang.{Boolean => JBoolean}
 import _root_.java.sql.Timestamp
 import _root_.java.util
@@ -51,7 +49,8 @@ import _root_.scala.collection.JavaConversions._
  * [[org.apache.flink.table.connector.source.LookupTableSource]] should be identical.
  */
 @RunWith(classOf[Parameterized])
-class LookupJoinTest(legacyTableSource: Boolean) extends TableTestBase with Serializable {
+class LookupJoinTest(legacyTableSource: Boolean, useComputedColumn: Boolean)
+  extends TableTestBase with Serializable {
 
   private val util = streamTestUtil()
 
@@ -65,12 +64,17 @@ class LookupJoinTest(legacyTableSource: Boolean) extends TableTestBase with Seri
     if (legacyTableSource) {
       TestTemporalTable.createTemporaryTable(util.tableEnv, "LookupTable")
     } else {
+      val computedColumn = useComputedColumn match {
+				case true => ", `nominal_age` as `age` + 1"
+				case _ => ""
+			}
       util.addTable(
-        """
+        s"""
           |CREATE TABLE LookupTable (
           |  `id` INT,
           |  `name` STRING,
           |  `age` INT
+          |  $computedColumn
           |) WITH (
           |  'connector' = 'values'
           |)
@@ -489,9 +493,12 @@ class LookupJoinTest(legacyTableSource: Boolean) extends TableTestBase with Seri
 }
 
 object LookupJoinTest {
-  @Parameterized.Parameters(name = "LegacyTableSource={0}")
+  @Parameterized.Parameters(name = "LegacyTableSource={0}, useComputedColumn={1}")
   def parameters(): JCollection[Array[Object]] = {
-    Seq[Array[AnyRef]](Array(JBoolean.TRUE), Array(JBoolean.FALSE))
+    Seq[Array[AnyRef]](
+      Array(JBoolean.TRUE, JBoolean.FALSE),
+      Array(JBoolean.FALSE, JBoolean.FALSE),
+      Array(JBoolean.FALSE, JBoolean.TRUE))
   }
 }
 

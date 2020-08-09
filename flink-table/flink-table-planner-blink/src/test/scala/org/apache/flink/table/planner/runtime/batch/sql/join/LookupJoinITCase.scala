@@ -96,7 +96,8 @@ class LookupJoinITCase(legacyTableSource: Boolean, isAsyncMode: Boolean) extends
            |CREATE TABLE $tableName (
            |  `age` INT,
            |  `id` BIGINT,
-           |  `name` STRING
+           |  `name` STRING,
+           |  `nominal_age` as age + 1
            |) WITH (
            |  'connector' = 'values',
            |  'data-id' = '$dataId',
@@ -152,6 +153,39 @@ class LookupJoinITCase(legacyTableSource: Boolean, isAsyncMode: Boolean) extends
   }
 
   @Test
+  def testJoinTemporalTableWithComputedColumn(): Unit = {
+    if (legacyTableSource) {
+      //Computed column do not support in legacyTableSource.
+      return
+    }
+    val sql = s"SELECT T.id, T.len, T.content, D.name, D.age, D.nominal_age " +
+      "FROM T JOIN userTable " +
+      "for system_time as of T.proctime AS D ON T.id = D.id"
+
+    val expected = Seq(
+      BatchTestBase.row(1, 12, "Julian", "Julian", 11, 12),
+      BatchTestBase.row(2, 15, "Hello", "Jark", 22, 23),
+      BatchTestBase.row(3, 15, "Fabian", "Fabian", 33, 34))
+    checkResult(sql, expected)
+  }
+
+  @Test
+  def testJoinTemporalTableWithComputedColumnAndPushDown(): Unit = {
+    if (legacyTableSource) {
+      //Computed column do not support in legacyTableSource.
+      return
+    }
+    val sql = s"SELECT T.id, T.len, T.content, D.name, D.age, D.nominal_age " +
+      "FROM T JOIN userTable " +
+      "for system_time as of T.proctime AS D ON T.id = D.id and D.nominal_age > 12"
+
+    val expected = Seq(
+      BatchTestBase.row(2, 15, "Hello", "Jark", 22, 23),
+      BatchTestBase.row(3, 15, "Fabian", "Fabian", 33, 34))
+    checkResult(sql, expected)
+  }
+
+  @Test
   def testJoinTemporalTableWithPushDown(): Unit = {
     val sql = s"SELECT T.id, T.len, T.content, D.name FROM T JOIN userTable " +
       "for system_time as of T.proctime AS D ON T.id = D.id AND D.age > 20"
@@ -164,12 +198,17 @@ class LookupJoinITCase(legacyTableSource: Boolean, isAsyncMode: Boolean) extends
 
   @Test
   def testJoinTemporalTableWithNonEqualFilter(): Unit = {
-    val sql = s"SELECT T.id, T.len, T.content, D.name, D.age FROM T JOIN userTable " +
-      "for system_time as of T.proctime AS D ON T.id = D.id WHERE T.len <= D.age"
+    if (legacyTableSource) {
+      //Computed column do not support in legacyTableSource.
+      return
+    }
+    val sql = s"SELECT T.id, T.len, T.content, D.name, D.age, D.nominal_age " +
+      s"FROM T JOIN userTable for system_time as of T.proctime AS D ON T.id = D.id " +
+      s"WHERE T.len <= D.age"
 
     val expected = Seq(
-      BatchTestBase.row(2, 15, "Hello", "Jark", 22),
-      BatchTestBase.row(3, 15, "Fabian", "Fabian", 33))
+      BatchTestBase.row(2, 15, "Hello", "Jark", 22, 23),
+      BatchTestBase.row(3, 15, "Fabian", "Fabian", 33, 34))
     checkResult(sql, expected)
   }
 
@@ -208,15 +247,19 @@ class LookupJoinITCase(legacyTableSource: Boolean, isAsyncMode: Boolean) extends
 
   @Test
   def testLeftJoinTemporalTable(): Unit = {
-    val sql = s"SELECT T.id, T.len, D.name, D.age FROM T LEFT JOIN userTable " +
+    if (legacyTableSource) {
+      //Computed column do not support in legacyTableSource.
+      return
+    }
+    val sql = s"SELECT T.id, T.len, D.name, D.age, D.nominal_age FROM T LEFT JOIN userTable " +
       "for system_time as of T.proctime AS D ON T.id = D.id"
 
     val expected = Seq(
-      BatchTestBase.row(1, 12, "Julian", 11),
-      BatchTestBase.row(2, 15, "Jark", 22),
-      BatchTestBase.row(3, 15, "Fabian", 33),
-      BatchTestBase.row(8, 11, null, null),
-      BatchTestBase.row(9, 12, null, null))
+      BatchTestBase.row(1, 12, "Julian", 11, 12),
+      BatchTestBase.row(2, 15, "Jark", 22, 23),
+      BatchTestBase.row(3, 15, "Fabian", 33, 34),
+      BatchTestBase.row(8, 11, null, null, null),
+      BatchTestBase.row(9, 12, null, null, null))
     checkResult(sql, expected)
   }
 
