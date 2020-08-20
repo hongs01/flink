@@ -40,7 +40,7 @@ import java.sql.Timestamp
 import scala.collection.mutable
 
 @RunWith(classOf[Parameterized])
-class TemporalJoinITCase(state: StateBackendMode)
+class LegacyTemporalJoinITCase(state: StateBackendMode)
   extends StreamingWithStateTestBase(state) {
 
   /**

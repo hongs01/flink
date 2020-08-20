@@ -23,7 +23,7 @@ import org.apache.flink.table.planner.calcite.FlinkTypeFactory._
 import org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable
 import org.apache.flink.table.planner.plan.nodes.calcite._
 import org.apache.flink.table.planner.plan.schema.TimeIndicatorRelDataType
-import org.apache.flink.table.planner.plan.utils.TemporalJoinUtil
+import org.apache.flink.table.planner.plan.utils.LegacyTemporalJoinUtil
 import org.apache.flink.table.types.logical.TimestampType
 
 import org.apache.calcite.rel.`type`.RelDataType
@@ -235,7 +235,7 @@ class RelTimeIndicatorConverter(rexBuilder: RexBuilder) extends RelShuttle {
     val left = join.getLeft.accept(this)
     val right = join.getRight.accept(this)
 
-    if (TemporalJoinUtil.containsTemporalJoinCondition(join.getCondition)) {
+    if (LegacyTemporalJoinUtil.containsTemporalJoinCondition(join.getCondition)) {
       // temporal table function join
       val rewrittenTemporalJoin = join.copy(join.getTraitSet, List(left, right))
 

@@ -34,7 +34,7 @@ import java.util
 import scala.collection.JavaConversions._
 
 /**
-  * Batch physical RelNode for temporal table join.
+  * Batch physical RelNode for temporal table join that implemented by lookup..
   */
 class BatchExecLookupJoin(
     cluster: RelOptCluster,

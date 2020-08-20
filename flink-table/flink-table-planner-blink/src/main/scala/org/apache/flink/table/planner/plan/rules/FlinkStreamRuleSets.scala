@@ -54,6 +54,8 @@ object FlinkStreamRuleSets {
     * can create new plan nodes.
     */
   val EXPAND_PLAN_RULES: RuleSet = RuleSets.ofList(
+    LogicalCorrelateToJoinFromTemporalTableRule.LOOKUP_JOIN_WITH_FILTER,
+    LogicalCorrelateToJoinFromTemporalTableRule.LOOKUP_JOIN_WITHOUT_FILTER,
     LogicalCorrelateToJoinFromTemporalTableRule.WITH_FILTER,
     LogicalCorrelateToJoinFromTemporalTableRule.WITHOUT_FILTER,
     LogicalCorrelateToJoinFromTemporalTableFunctionRule.INSTANCE)
@@ -405,6 +407,7 @@ object FlinkStreamRuleSets {
     StreamExecJoinRule.INSTANCE,
     StreamExecIntervalJoinRule.INSTANCE,
     StreamExecTemporalJoinRule.INSTANCE,
+    StreamExecLegacyTemporalJoinRule.INSTANCE,
     StreamExecLookupJoinRule.SNAPSHOT_ON_TABLESCAN,
     StreamExecLookupJoinRule.SNAPSHOT_ON_CALC_TABLESCAN,
     // CEP
