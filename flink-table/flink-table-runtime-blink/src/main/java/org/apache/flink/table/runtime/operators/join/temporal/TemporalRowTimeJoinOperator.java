@@ -250,10 +250,10 @@ public class TemporalRowTimeJoinOperator
 		RowData indexToKeepRow = rightRowsSorted.get(indexToKeep);
 
 		// the latest data is retract means the latest version has expired
-		if (RowDataUtil.isRetractMsg(indexToKeepRow)) {
-			rightState.remove(indexToKeepRow);
+		if (indexToKeep >= 0 && RowDataUtil.isRetractMsg(indexToKeepRow)) {
+			indexToKeep += 1;
 		}
-		// clean old version data that behind the current  watermark
+		// clean old version data that behind current watermark
 		while (i < indexToKeep) {
 			RowData row = rightRowsSorted.get(i);
 			rightState.remove(row);
@@ -294,50 +294,13 @@ public class TemporalRowTimeJoinOperator
 		return -1;
 	}
 
-	/**
-	 * Binary search {@code rightRowsSorted} to find the latest right row to join with {@code leftTime}.
-	 * Latest means a right row with largest time that is still smaller or equal to {@code leftTime}.
-	 *
-	 * @return found element or {@code Optional.empty} If such row was not found (either {@code rightRowsSorted}
-	 *         is empty or all {@code rightRowsSorted} are are newer).
-	 */
 	private Optional<RowData> latestRightRowToJoin(List<RowData> rightRowsSorted, long leftTime) {
-		Optional<RowData> latestRow = latestRightRowToJoin(
-			rightRowsSorted, 0, rightRowsSorted.size() - 1, leftTime);
+		int indexToKeep = firstIndexToKeep(leftTime, rightRowsSorted);
 		// the latest data is retract means the latest version has expired
-		if (latestRow.isPresent() && RowDataUtil.isRetractMsg(latestRow.get())) {
+		if (indexToKeep < 0 || RowDataUtil.isRetractMsg(rightRowsSorted.get(indexToKeep))) {
 			return Optional.empty();
-		}
-		return latestRow;
-	}
-
-	private Optional<RowData> latestRightRowToJoin(
-			List<RowData> rightRowsSorted,
-			int low,
-			int high,
-			long leftTime) {
-		if (low > high) {
-			// exact value not found, we are returning largest from the values smaller then leftTime
-			if (low - 1 < 0) {
-				return Optional.empty();
-			}
-			else {
-				return Optional.of(rightRowsSorted.get(low - 1));
-			}
 		} else {
-			int mid = (low + high) >>> 1;
-			RowData midRow = rightRowsSorted.get(mid);
-			long midTime = getRightTime(midRow);
-			int cmp = Long.compare(midTime, leftTime);
-			if (cmp < 0) {
-				return latestRightRowToJoin(rightRowsSorted, mid + 1, high, leftTime);
-			}
-			else if (cmp > 0) {
-				return latestRightRowToJoin(rightRowsSorted, low, mid - 1, leftTime);
-			}
-			else {
-				return Optional.of(midRow);
-			}
+			return Optional.of(rightRowsSorted.get(indexToKeep));
 		}
 	}
 

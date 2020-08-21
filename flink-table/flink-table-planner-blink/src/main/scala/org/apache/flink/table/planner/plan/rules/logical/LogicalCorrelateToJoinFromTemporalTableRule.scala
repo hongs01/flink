@@ -277,12 +277,7 @@ abstract class LogicalCorrelateToJoinFromGeneralTemporalTableRule(
     val primaryKeyInputRefs = extractPrimaryKeyInputRefs(leftInput, snapshot, rexBuilder)
 
     val temporalCondition = if(isProcTimeTemporalTableJoin(snapshot)) {
-      if (primaryKeyInputRefs.isDefined) {
-        TemporalJoinUtil.makeProcTimeTemporalJoinConditionCall(
-          rexBuilder, snapshotTimeInputRef, primaryKeyInputRefs.get)
-      } else {
         TemporalJoinUtil.makeProcTimeTemporalJoinConditionCall(rexBuilder, snapshotTimeInputRef)
-      }
     } else {
       if (primaryKeyInputRefs.isDefined && rightTimeInputRef.isDefined) {
         if (joinKeyContainsPrimaryKey(joinCondition, primaryKeyInputRefs.get)) {

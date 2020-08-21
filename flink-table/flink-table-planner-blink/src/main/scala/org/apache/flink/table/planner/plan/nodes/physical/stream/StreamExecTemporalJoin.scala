@@ -61,6 +61,19 @@ class StreamExecTemporalJoin(
   with StreamPhysicalRel
   with StreamExecNode[RowData] {
 
+  def rightUniqueKeyContainsJoinKey(): Boolean = {
+    val right = getInput(1)
+    val rightUniqueKeys = getCluster.getMetadataQuery.getUniqueKeys(right)
+    if (rightUniqueKeys != null) {
+      val joinKeys = keyPairs.map(_.target).toArray
+      rightUniqueKeys.exists {
+        uniqueKey => joinKeys.forall(uniqueKey.toArray.contains(_))
+      }
+    } else {
+      false
+    }
+  }
+
   override def requireWatermark: Boolean = {
     val nonEquiJoinRex = getJoinInfo.getRemaining(cluster.getRexBuilder)
 
