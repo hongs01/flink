@@ -223,7 +223,7 @@ public class StreamingJoinOperator extends AbstractStreamingJoinOperator {
 					}
 					// send +I[record+other]s
 					outRow.setRowKind(RowKind.INSERT);
-					for (RowData other : associatedRecords.getRecords()) {
+ 					for (RowData other : associatedRecords.getRecords()) {
 						output(input, other, inputIsLeft);
 					}
 					// state.add(record, other.size)

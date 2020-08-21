@@ -17,22 +17,16 @@
  */
 package org.apache.flink.table.planner.plan.rules.logical
 
-import org.apache.calcite.adapter.jdbc.JdbcRel
 import org.apache.calcite.plan.RelOptRule.{any, operand}
 import org.apache.calcite.plan.hep.HepRelVertex
-import org.apache.calcite.plan.{RelOptRule, RelOptRuleCall, RelOptRuleOperand, RelOptTable}
-import org.apache.calcite.rel.`type`.RelDataTypeField
-import org.apache.calcite.rel.{RelNode, RelVisitor, SingleRel}
+import org.apache.calcite.plan.{RelOptRule, RelOptRuleCall, RelOptRuleOperand}
+import org.apache.calcite.rel.{RelNode}
 import org.apache.calcite.rel.core.TableScan
 import org.apache.calcite.rel.logical.{LogicalCorrelate, LogicalFilter, LogicalProject, LogicalSnapshot, LogicalTableScan}
 import org.apache.calcite.rex._
 import org.apache.flink.table.api.{TableException, ValidationException}
 import org.apache.flink.table.connector.source.LookupTableSource
-import org.apache.flink.table.planner.plan.metadata.FlinkRelMetadataQuery
-import org.apache.flink.table.planner.plan.nodes.calcite.LogicalWatermarkAssigner
-import org.apache.flink.table.planner.plan.nodes.common.CommonPhysicalTableSourceScan
 import org.apache.flink.table.planner.plan.nodes.logical.{FlinkLogicalLegacyTableSourceScan, FlinkLogicalTableSourceScan}
-import org.apache.flink.table.planner.plan.nodes.physical.PhysicalLegacyTableSourceScan
 import org.apache.flink.table.planner.plan.nodes.physical.stream.{StreamExecLookupJoin, StreamExecTemporalJoin}
 import org.apache.flink.table.planner.plan.schema.{LegacyTableSourceTable, TableSourceTable, TimeIndicatorRelDataType}
 import org.apache.flink.table.planner.plan.utils.{RexDefaultVisitor, TemporalJoinUtil}
@@ -40,7 +34,6 @@ import org.apache.flink.table.sources.LookupableTableSource
 
 import scala.collection.JavaConversions._
 import scala.collection.JavaConverters._
-import scala.collection.mutable
 
 /**
   * The initial temporal table join (FOR SYSTEM_TIME AS OF) is a Correlate, rewrite it into a Join
@@ -292,13 +285,19 @@ abstract class LogicalCorrelateToJoinFromGeneralTemporalTableRule(
       }
     } else {
       if (primaryKeyInputRefs.isDefined && rightTimeInputRef.isDefined) {
-        TemporalJoinUtil.makeRowTimeTemporalJoinConditionCall(
-          rexBuilder, snapshotTimeInputRef, rightTimeInputRef.get, primaryKeyInputRefs.get)
+        if (joinKeyContainsPrimaryKey(joinCondition, primaryKeyInputRefs.get)) {
+          TemporalJoinUtil.makeRowTimeTemporalJoinConditionCall(
+            rexBuilder, snapshotTimeInputRef, rightTimeInputRef.get, primaryKeyInputRefs.get)
+        } else {
+          throw new TableException("Event-Time Temporal Table Join requires primary key " +
+            s"contained in join key but the time primary key ${primaryKeyInputRefs} is " +
+            s"not in join key ${primaryKeyInputRefs.get}.")
+        }
       } else {
         throw new TableException("Event-Time Temporal Table Join requires both primary key and " +
-          s"time attribute in temporal table, the actual primaryKey is " +
-          s"${primaryKeyInputRefs.getOrElse("NULL")}, the actual time attribute is" +
-          s" ${rightTimeInputRef.getOrElse("NULL")}.")
+          s"time attribute in temporal table, but the actual primaryKey is " +
+          s"${primaryKeyInputRefs.getOrElse("NULL")}, time attribute is" +
+          s"${rightTimeInputRef.getOrElse("NULL")}.")
       }
     }
 
@@ -316,6 +315,12 @@ abstract class LogicalCorrelateToJoinFromGeneralTemporalTableRule(
       case t: TimeIndicatorRelDataType if !t.isEventTime => true
       case _ => false
     }
+
+  private def joinKeyContainsPrimaryKey(
+      joinCondition: RexNode,
+      primaryKey: Seq[RexNode]) : Boolean = {
+    true
+  }
 }
 
 /**
@@ -436,32 +441,6 @@ class LogicalCorrelateToJoinFromTemporalTableRuleWithoutFilter
 
   override def getLogicalSnapshot(call: RelOptRuleCall): LogicalSnapshot = {
     call.rels(2).asInstanceOf[LogicalSnapshot]
-  }
-}
-
-/**
- * This converts field accesses like `$cor0.o_rowtime` to valid input references
- * for join condition context without `$cor` reference.
- */
-class CorrelatedFieldAccessRemoval(var rexBuilder: RexBuilder, var leftSide: RelNode)
-  extends RexDefaultVisitor[RexNode] {
-
-  override def visitFieldAccess(fieldAccess: RexFieldAccess): RexNode = {
-    val leftIndex = leftSide.getRowType.getFieldList.indexOf(fieldAccess.getField)
-    if (leftIndex < 0) {
-      throw new IllegalStateException(
-        s"Failed to find reference to field [${fieldAccess.getField}] in node [$leftSide]")
-    }
-    rexBuilder.makeInputRef(leftSide, leftIndex)
-  }
-
-  override def visitInputRef(inputRef: RexInputRef): RexNode = {
-    inputRef
-  }
-
-  override def visitNode(rexNode: RexNode): RexNode = {
-    throw new ValidationException(
-      s"Unsupported argument [$rexNode] in ${classOf[CorrelatedFieldAccessRemoval].getSimpleName}")
   }
 }
 
