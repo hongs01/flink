@@ -290,14 +290,15 @@ object StreamExecTemporalJoinToCoProcessTranslator {
     joinInfo: JoinInfo,
     rexBuilder: RexBuilder): StreamExecTemporalJoinToCoProcessTranslator = {
 
-    checkState(
-      !joinInfo.isEqui,
-      "Missing %s in join condition",
-      TEMPORAL_JOIN_CONDITION)
 
     val leftType = FlinkTypeFactory.toLogicalRowType(leftInput.getRowType)
     val rightType = FlinkTypeFactory.toLogicalRowType(rightInput.getRowType)
+    checkState(
+      !joinInfo.isEqui,
+      "Missing %s in Event-Time temporal join condition",
+      TEMPORAL_JOIN_CONDITION)
     val nonEquiJoinRex: RexNode = joinInfo.getRemaining(rexBuilder)
+
     val temporalJoinConditionExtractor = new TemporalJoinConditionExtractor(
       textualRepresentation,
       leftType.getFieldCount,
@@ -354,7 +355,7 @@ object StreamExecTemporalJoinToCoProcessTranslator {
 
     var rightTimeAttribute: Option[RexNode] = None
 
-    var rightPrimaryKeyExpression: Option[RexNode] = None
+    var rightPrimaryKeyExpression: Option[Array[RexNode]] = None
 
     override def visitCall(call: RexCall): RexNode = {
       if (call.getOperator != TEMPORAL_JOIN_CONDITION) {

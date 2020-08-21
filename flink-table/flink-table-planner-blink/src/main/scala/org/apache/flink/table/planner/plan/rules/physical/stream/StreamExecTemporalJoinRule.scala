@@ -55,10 +55,6 @@ class StreamExecTemporalJoinRule
     val join = call.rel[FlinkLogicalJoin](0)
     val snapshot = call.rel[FlinkLogicalSnapshot](2)
 
-    if (!TemporalJoinUtil.containsTemporalJoinCondition(join.getCondition)) {
-      return false
-    }
-
     val isTemporalJoin = matches(snapshot)
     val supportedJoinTypes = Seq(JoinRelType.INNER, JoinRelType.LEFT)
 

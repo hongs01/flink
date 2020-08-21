@@ -17,9 +17,11 @@
  */
 package org.apache.flink.table.planner.plan.utils
 
+import org.apache.calcite.rel.RelNode
 import org.apache.calcite.rex._
 import org.apache.calcite.sql.`type`.{OperandTypes, ReturnTypes}
 import org.apache.calcite.sql.{SqlFunction, SqlFunctionCategory, SqlKind}
+import org.apache.flink.table.planner.plan.nodes.logical.{FlinkLogicalJoin, FlinkLogicalSnapshot}
 import org.apache.flink.util.Preconditions.checkArgument
 
 import scala.collection.JavaConversions._
@@ -120,7 +122,11 @@ object TemporalJoinUtil {
       leftTimeAttribute)
   }
 
-  def containsTemporalJoinCondition(condition: RexNode): Boolean = {
+  def isTemporalJoin(join: FlinkLogicalJoin): Boolean = {
+    isTemporalJoin(join.getRight, join.getCondition)
+  }
+
+  def isTemporalJoin(joinRightInput: RelNode, condition: RexNode): Boolean = {
     var hasTemporalJoinCondition: Boolean = false
     condition.accept(new RexVisitorImpl[Void](true) {
       override def visitCall(call: RexCall): Void = {
@@ -132,7 +138,7 @@ object TemporalJoinUtil {
         }
       }
     })
-    hasTemporalJoinCondition
+    hasTemporalJoinCondition || joinRightInput.isInstanceOf[FlinkLogicalSnapshot]
   }
 
 }

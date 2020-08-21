@@ -271,18 +271,17 @@ abstract class LogicalCorrelateToJoinFromGeneralTemporalTableRule(
 
     val rexBuilder = correlate.getCluster.getRexBuilder
 
-    val snapshotTimeInputRef= extractSnapshotTimeInputRef(leftInput, snapshot)
-    val rightTimeInputRef = extractRightTimeInputRef(leftInput, snapshot)
 
-    val primaryKeyInputRefs = extractPrimaryKeyInputRefs(leftInput, snapshot, rexBuilder)
+    val temporalCondition = if(isRowTimeTemporalTableJoin(snapshot)) {
+      val snapshotTimeInputRef= extractSnapshotTimeInputRef(leftInput, snapshot)
+      val rightTimeInputRef = extractRightTimeInputRef(leftInput, snapshot)
+      val primaryKeyInputRefs = extractPrimaryKeyInputRefs(leftInput, snapshot, rexBuilder)
 
-    val temporalCondition = if(isProcTimeTemporalTableJoin(snapshot)) {
-        TemporalJoinUtil.makeProcTimeTemporalJoinConditionCall(rexBuilder, snapshotTimeInputRef)
-    } else {
       if (primaryKeyInputRefs.isDefined && rightTimeInputRef.isDefined) {
         if (joinKeyContainsPrimaryKey(joinCondition, primaryKeyInputRefs.get)) {
-          TemporalJoinUtil.makeRowTimeTemporalJoinConditionCall(
+          val rowTimeTemporalCondition = TemporalJoinUtil.makeRowTimeTemporalJoinConditionCall(
             rexBuilder, snapshotTimeInputRef, rightTimeInputRef.get, primaryKeyInputRefs.get)
+          Some(rowTimeTemporalCondition)
         } else {
           throw new TableException("Event-Time Temporal Table Join requires primary key " +
             s"contained in join key but the time primary key ${primaryKeyInputRefs} is " +
@@ -294,10 +293,15 @@ abstract class LogicalCorrelateToJoinFromGeneralTemporalTableRule(
           s"${primaryKeyInputRefs.getOrElse("NULL")}, time attribute is" +
           s"${rightTimeInputRef.getOrElse("NULL")}.")
       }
+    } else {
+      None
     }
 
     val builder = call.builder()
-    val condition = builder.and(joinCondition, temporalCondition)
+    val condition = temporalCondition match {
+      case Some(con) => builder.and(joinCondition, con)
+      case _ =>  joinCondition
+    }
 
     builder.push(leftInput)
     builder.push(snapshot)
@@ -305,9 +309,9 @@ abstract class LogicalCorrelateToJoinFromGeneralTemporalTableRule(
     call.transformTo(rewriteJoin)
   }
 
-  private def isProcTimeTemporalTableJoin(snapshot: LogicalSnapshot): Boolean =
+  private def isRowTimeTemporalTableJoin(snapshot: LogicalSnapshot): Boolean =
     snapshot.getPeriod.getType match {
-      case t: TimeIndicatorRelDataType if !t.isEventTime => true
+      case t: TimeIndicatorRelDataType if t.isEventTime => true
       case _ => false
     }
 

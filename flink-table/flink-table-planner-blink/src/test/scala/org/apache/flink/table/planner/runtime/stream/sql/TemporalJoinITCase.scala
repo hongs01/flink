@@ -195,9 +195,9 @@ class TemporalJoinITCase(state: StateBackendMode)
          |  WATERMARK FOR currency_time AS currency_time - interval '10' SECOND
          |) WITH (
          |  'connector' = 'values',
-         |  'data-id' = '$dataId5'
-         |)
-         |""".stripMargin)
+         |  'data-id' = '$dataId5',
+         |  'changelog-mode' = 'I')
+         |  """.stripMargin)
 
     tEnv.executeSql(
       s"""
@@ -283,15 +283,34 @@ class TemporalJoinITCase(state: StateBackendMode)
     execInsertSqlAndWaitResult(insertSql)
     val rawResult = TestValuesTableFactory.getRawResults("rowtime_sink")
     val expected = List(
-      "+I(1,user2,71.20)",
-      "+I(1,user1,10.02)",
-      "-U(1,user1,10.02)",
-      "+U(1,user1,18.12)",
-      "+I(2,user4,9.99)",
-      "+I(2,user1,10.00)",
-      "+I(2,user3,11.30)",
-      "-U(2,user3,11.30)",
-      "+U(2,user3,32.33)")
+     "+I(1,Euro,12,2020-08-16T00:01:01,114,2020-08-15T08:00)",
+      "+I(2,US Dollar,1,2020-08-16T00:01:08,102,2020-08-15T08:00)",
+      "+I(3,US Dollar,14,2020-08-16T00:01:12,106,2020-08-16T00:01:12)",
+      "+I(4,US Dollar,18,2020-08-16T00:01:14,106,2020-08-16T00:01:12)",
+      "+I(5,RMB,40,2020-08-16T00:02:01,702,2020-08-15T08:00)")
+    assertEquals(expected.sorted, rawResult.sorted)
+  }
+
+  @Test
+  def testEventTimeViewInnerJoin(): Unit = {
+    env.setParallelism(1)
+    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
+
+    val insertSql = "INSERT INTO rowtime_sink " +
+      "SELECT o.order_id, o.currency, o.amount, o.order_time, r.rate," +
+      " cast(r.currency_time as TIMESTAMP(3)) " +
+      " FROM orders_rowtime AS o JOIN " +
+      " versioned_currency_view " +
+      " FOR SYSTEM_TIME AS OF o.order_time as r " +
+      " ON o.currency = r.currency"
+    execInsertSqlAndWaitResult(insertSql)
+    val rawResult = TestValuesTableFactory.getRawResults("rowtime_sink")
+    val expected = List(
+      "+I(1,Euro,12,2020-08-16T00:01:01,114,2020-08-15T08:00)",
+      "+I(2,US Dollar,1,2020-08-16T00:01:08,102,2020-08-15T08:00)",
+      "+I(3,US Dollar,14,2020-08-16T00:01:12,106,2020-08-16T00:01:12)",
+      "+I(4,US Dollar,18,2020-08-16T00:01:14,106,2020-08-16T00:01:12)",
+      "+I(5,RMB,40,2020-08-16T00:02:01,702,2020-08-15T08:00)")
     assertEquals(expected.sorted, rawResult.sorted)
   }
 

@@ -46,7 +46,6 @@ class TemporalJoinTest extends TableTestBase {
       |CREATE TABLE RatesHistory (
       | currency STRING,
       | rate INT,
-      | rate_1 as rate + 1,
       | rowtime TIMESTAMP(3),
       | WATERMARK FOR rowtime AS rowtime,
       | PRIMARY KEY(currency) NOT ENFORCED
