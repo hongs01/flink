@@ -68,7 +68,8 @@ class StreamExecTemporalJoinRule
   override def onMatch(call: RelOptRuleCall): Unit = {
     val join = call.rel[FlinkLogicalJoin](0)
     val left = call.rel[FlinkLogicalRel](1)
-    val right = call.rel[FlinkLogicalRel](2)
+    val snapshot = call.rel[FlinkLogicalSnapshot](2)
+    val snapshotInput = call.rel[FlinkLogicalRel](3)
 
     def toHashTraitByColumns(
         columns: util.Collection[_ <: Number],
@@ -86,10 +87,10 @@ class StreamExecTemporalJoinRule
     val joinInfo = join.analyzeCondition
     val (leftRequiredTrait, rightRequiredTrait) = (
       toHashTraitByColumns(joinInfo.leftKeys, left.getTraitSet),
-      toHashTraitByColumns(joinInfo.rightKeys, right.getTraitSet))
+      toHashTraitByColumns(joinInfo.rightKeys, snapshotInput.getTraitSet))
 
     val convLeft: RelNode = RelOptRule.convert(left, leftRequiredTrait)
-    val convRight: RelNode = RelOptRule.convert(right, rightRequiredTrait)
+    val convRight: RelNode = RelOptRule.convert(snapshotInput, rightRequiredTrait)
     val providedTraitSet: RelTraitSet = join.getTraitSet.replace(FlinkConventions.STREAM_PHYSICAL)
 
     val temporalJoin = new StreamExecTemporalJoin(
