@@ -242,6 +242,11 @@ class TemporalJoinITCase(state: StateBackendMode)
         |""".stripMargin)
   }
 
+  /**
+   * Because of nature of the processing time, we can not (or at least it is not that easy)
+   * validate the result here. Instead of that, here we are just testing whether there are no
+   * exceptions in a full blown ITCase. Actual correctness is tested in unit tests.
+   */
   @Test
   def testProcessTimeTemoralJoin(): Unit = {
     env.setParallelism(1)
@@ -254,18 +259,6 @@ class TemporalJoinITCase(state: StateBackendMode)
       " FOR SYSTEM_TIME AS OF o.proctime as r " +
       " ON o.currency = r.currency"
     execInsertSqlAndWaitResult(insertSql)
-    val rawResult = TestValuesTableFactory.getRawResults("proctime_sink")
-    val expected = List(
-      "+I(1,user2,71.20)",
-      "+I(1,user1,10.02)",
-      "-U(1,user1,10.02)",
-      "+U(1,user1,18.12)",
-      "+I(2,user4,9.99)",
-      "+I(2,user1,10.00)",
-      "+I(2,user3,11.30)",
-      "-U(2,user3,11.30)",
-      "+U(2,user3,32.33)")
-    assertEquals(expected.sorted, rawResult.sorted)
   }
 
   @Test

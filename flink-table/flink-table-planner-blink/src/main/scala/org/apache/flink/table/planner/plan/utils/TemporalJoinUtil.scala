@@ -18,6 +18,7 @@
 package org.apache.flink.table.planner.plan.utils
 
 import org.apache.calcite.rel.RelNode
+import org.apache.calcite.rel.core.JoinInfo
 import org.apache.calcite.rex._
 import org.apache.calcite.sql.`type`.{OperandTypes, ReturnTypes}
 import org.apache.calcite.sql.{SqlFunction, SqlFunctionCategory, SqlKind}
@@ -73,17 +74,6 @@ object TemporalJoinUtil {
     OperandTypes.ARRAY,
     SqlFunctionCategory.SYSTEM)
 
-
-  def isRowtimeCall(call: RexCall): Boolean = {
-    checkArgument(call.getOperator == TEMPORAL_JOIN_CONDITION)
-    call.getOperands.size() == 3
-  }
-
-  def isProctimeCall(call: RexCall): Boolean = {
-    checkArgument(call.getOperator == TEMPORAL_JOIN_CONDITION)
-    call.getOperands.size() == 2 || call.getOperands.size() == 1
-  }
-
   def makeRowTimeTemporalJoinConditionCall(
     rexBuilder: RexBuilder,
     leftTimeAttribute: RexNode,
@@ -93,16 +83,6 @@ object TemporalJoinUtil {
       TEMPORAL_JOIN_CONDITION,
       leftTimeAttribute,
       rightTimeAttribute,
-      makePrimaryKeyCall(rexBuilder, rightPrimaryKeyExpression))
-  }
-
-  def makeProcTimeTemporalJoinConditionCall(
-    rexBuilder: RexBuilder,
-    leftTimeAttribute: RexNode,
-    rightPrimaryKeyExpression: Seq[RexNode]): RexNode = {
-    rexBuilder.makeCall(
-      TEMPORAL_JOIN_CONDITION,
-      leftTimeAttribute,
       makePrimaryKeyCall(rexBuilder, rightPrimaryKeyExpression))
   }
 
@@ -123,10 +103,8 @@ object TemporalJoinUtil {
   }
 
   def isTemporalJoin(join: FlinkLogicalJoin): Boolean = {
-    isTemporalJoin(join.getRight, join.getCondition)
-  }
-
-  def isTemporalJoin(joinRightInput: RelNode, condition: RexNode): Boolean = {
+    val joinRightInput = join.getRight
+    val condition = join.getCondition
     var hasTemporalJoinCondition: Boolean = false
     condition.accept(new RexVisitorImpl[Void](true) {
       override def visitCall(call: RexCall): Void = {
@@ -139,6 +117,23 @@ object TemporalJoinUtil {
       }
     })
     hasTemporalJoinCondition || joinRightInput.isInstanceOf[FlinkLogicalSnapshot]
+  }
+
+  def isRowTimeJoin(rexBuilder: RexBuilder, joinInfo: JoinInfo): Boolean = {
+    val nonEquiJoinRex = joinInfo.getRemaining(rexBuilder)
+
+    var rowtimeJoin: Boolean = false
+    val visitor = new RexVisitorImpl[Unit](true) {
+      override def visitCall(call: RexCall): Unit = {
+        if (call.getOperator == TEMPORAL_JOIN_CONDITION) {
+          rowtimeJoin = true
+        } else {
+          call.getOperands.foreach(node => node.accept(this))
+        }
+      }
+    }
+    nonEquiJoinRex.accept(visitor)
+    rowtimeJoin
   }
 
 }

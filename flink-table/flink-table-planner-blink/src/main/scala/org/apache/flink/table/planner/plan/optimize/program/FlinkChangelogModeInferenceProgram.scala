@@ -529,7 +529,7 @@ class FlinkChangelogModeInferenceProgram extends FlinkOptimizeProgram[StreamOpti
 
         // the right input is a snapshot which won't send message to parent
         // so its required trait depends on it's unique key contains join key or not
-        val needUpdateBefore = !temporalJoin.rightUniqueKeyContainsJoinKey()
+        val needUpdateBefore = !temporalJoin.rightInputUniqueKeyContainsJoinKey()
         val rightInputModifyKindSet = getModifyKindSet(right)
         val rightRequiredTrait = if (needUpdateBefore) {
           beforeAfterOrNone(rightInputModifyKindSet)

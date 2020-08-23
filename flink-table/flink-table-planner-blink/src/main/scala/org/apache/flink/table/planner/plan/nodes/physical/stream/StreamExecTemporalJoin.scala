@@ -31,12 +31,14 @@ import org.apache.flink.streaming.api.transformations.TwoInputTransformation
 import org.apache.flink.table.api.{TableConfig, TableException, ValidationException}
 import org.apache.flink.table.data.RowData
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory
-import org.apache.flink.table.planner.calcite.FlinkTypeFactory.{isProctimeIndicatorType, isRowtimeIndicatorType}
+import org.apache.flink.table.planner.calcite.FlinkTypeFactory.isRowtimeIndicatorType
 import org.apache.flink.table.planner.codegen.{CodeGeneratorContext, ExprCodeGenerator, FunctionCodeGenerator}
 import org.apache.flink.table.planner.delegation.StreamPlanner
 import org.apache.flink.table.planner.plan.nodes.common.CommonPhysicalJoin
 import org.apache.flink.table.planner.plan.nodes.exec.{ExecNode, StreamExecNode}
+import org.apache.flink.table.planner.plan.schema.TimeIndicatorRelDataType
 import org.apache.flink.table.planner.plan.utils.TemporalJoinUtil.TEMPORAL_JOIN_CONDITION
+import org.apache.flink.table.planner.plan.utils.TemporalJoinUtil.TEMPORAL_JOIN_CONDITION_PRIMARY_KEY
 import org.apache.flink.table.planner.plan.utils.{InputRefVisitor, KeySelectorUtil, RelExplainUtil, TemporalJoinUtil}
 import org.apache.flink.table.runtime.generated.GeneratedJoinCondition
 import org.apache.flink.table.runtime.keyselector.RowDataKeySelector
@@ -46,7 +48,7 @@ import org.apache.flink.table.types.logical.RowType
 import org.apache.flink.util.Preconditions.checkState
 
 import scala.collection.JavaConversions._
-
+import scala.collection.JavaConverters._
 /**
  * Stream physical node for temporal table join (FOR SYSTEM_TIME AS OF).
  */
@@ -61,7 +63,7 @@ class StreamExecTemporalJoin(
   with StreamPhysicalRel
   with StreamExecNode[RowData] {
 
-  def rightUniqueKeyContainsJoinKey(): Boolean = {
+  def rightInputUniqueKeyContainsJoinKey(): Boolean = {
     val right = getInput(1)
     val rightUniqueKeys = getCluster.getMetadataQuery.getUniqueKeys(right)
     if (rightUniqueKeys != null) {
@@ -75,20 +77,7 @@ class StreamExecTemporalJoin(
   }
 
   override def requireWatermark: Boolean = {
-    val nonEquiJoinRex = getJoinInfo.getRemaining(cluster.getRexBuilder)
-
-    var rowtimeJoin: Boolean = false
-    val visitor = new RexVisitorImpl[Unit](true) {
-      override def visitCall(call: RexCall): Unit = {
-        if (call.getOperator == TEMPORAL_JOIN_CONDITION) {
-          rowtimeJoin = TemporalJoinUtil.isRowtimeCall(call)
-        } else {
-          call.getOperands.foreach(node => node.accept(this))
-        }
-      }
-    }
-    nonEquiJoinRex.accept(visitor)
-    rowtimeJoin
+    TemporalJoinUtil.isRowTimeJoin(cluster.getRexBuilder, getJoinInfo)
   }
 
   override def copy(
@@ -199,9 +188,9 @@ class StreamExecTemporalJoinToCoProcessTranslator private(
   rexBuilder: RexBuilder,
   leftTimeAttributeInputReference: Int,
   rightTimeAttributeInputReference: Option[Int],
-  remainingNonEquiJoinPredicates: RexNode) {
+  remainingNonEquiJoinPredicates: Option[RexNode]) {
 
-  val nonEquiJoinPredicates: Option[RexNode] = Some(remainingNonEquiJoinPredicates)
+  val nonEquiJoinPredicates: Option[RexNode] = remainingNonEquiJoinPredicates
 
   def getLeftKeySelector: RowDataKeySelector = {
     KeySelectorUtil.getRowDataSelector(
@@ -293,11 +282,6 @@ object StreamExecTemporalJoinToCoProcessTranslator {
 
     val leftType = FlinkTypeFactory.toLogicalRowType(leftInput.getRowType)
     val rightType = FlinkTypeFactory.toLogicalRowType(rightInput.getRowType)
-    checkState(
-      !joinInfo.isEqui,
-      "Missing %s in Event-Time temporal join condition",
-      TEMPORAL_JOIN_CONDITION)
-    val nonEquiJoinRex: RexNode = joinInfo.getRemaining(rexBuilder)
 
     val temporalJoinConditionExtractor = new TemporalJoinConditionExtractor(
       textualRepresentation,
@@ -305,13 +289,42 @@ object StreamExecTemporalJoinToCoProcessTranslator {
       joinInfo,
       rexBuilder)
 
-    val remainingNonEquiJoinPredicates = temporalJoinConditionExtractor.apply(nonEquiJoinRex)
+    val (leftTimeAttributeInputRef, rightTimeAttributeInputRef, remainingNonEquiJoinPredicates) =
+      if (TemporalJoinUtil.isRowTimeJoin(rexBuilder, joinInfo)) {
+      checkState(
+        !joinInfo.isEqui,
+        "Missing %s in Event-Time temporal join condition",
+        TEMPORAL_JOIN_CONDITION)
+      val nonEquiJoinRex: RexNode = joinInfo.getRemaining(rexBuilder)
+      val remainingNonEquiJoinPredicates = temporalJoinConditionExtractor.apply(nonEquiJoinRex)
 
-    checkState(
-      temporalJoinConditionExtractor.leftTimeAttribute.isDefined &&
-        temporalJoinConditionExtractor.rightPrimaryKeyExpression.isDefined,
-      "Missing %s in join condition",
-      TEMPORAL_JOIN_CONDITION)
+      checkState(
+        temporalJoinConditionExtractor.leftTimeAttribute.isDefined &&
+          temporalJoinConditionExtractor.rightPrimaryKeyExpression.isDefined,
+        "Missing %s in Event-Time temporal join condition",
+        TEMPORAL_JOIN_CONDITION)
+        (extractInputRef(
+          temporalJoinConditionExtractor.leftTimeAttribute.get,
+          textualRepresentation),
+          temporalJoinConditionExtractor.rightTimeAttribute.map(
+            rightTimeAttribute =>
+              extractInputRef(
+                rightTimeAttribute,
+                textualRepresentation
+              ) - leftType.getFieldCount),
+          Some(remainingNonEquiJoinPredicates))
+      } else {
+        val leftTimeAttributes = leftInput.getRowType.getFieldList
+          .filter(f => f.getType.isInstanceOf[TimeIndicatorRelDataType])
+        if (leftTimeAttributes.isEmpty) {
+          throw new ValidationException(
+            s"Missing timeAttribute in the left input of Processing-Time temporal join")
+        }
+        val leftTimeAttributeInputRef = leftTimeAttributes
+          .map(f => f.getIndex)
+          .head
+        (leftTimeAttributeInputRef, None, None)
+      }
 
     new StreamExecTemporalJoinToCoProcessTranslator(
       textualRepresentation,
@@ -321,19 +334,12 @@ object StreamExecTemporalJoinToCoProcessTranslator {
       rightType,
       joinInfo,
       rexBuilder,
-      extractInputReference(
-        temporalJoinConditionExtractor.leftTimeAttribute.get,
-        textualRepresentation),
-      temporalJoinConditionExtractor.rightTimeAttribute.map(
-        rightTimeAttribute =>
-          extractInputReference(
-            rightTimeAttribute,
-            textualRepresentation
-          ) - leftType.getFieldCount),
+      leftTimeAttributeInputRef,
+      rightTimeAttributeInputRef,
       remainingNonEquiJoinPredicates)
   }
 
-  private def extractInputReference(rexNode: RexNode, textualRepresentation: String): Int = {
+  private def extractInputRef(rexNode: RexNode, textualRepresentation: String): Int = {
     val inputReferenceVisitor = new InputRefVisitor
     rexNode.accept(inputReferenceVisitor)
     checkState(
@@ -341,6 +347,16 @@ object StreamExecTemporalJoinToCoProcessTranslator {
       "Failed to find input reference in [%s]",
       textualRepresentation)
     inputReferenceVisitor.getFields.head
+  }
+
+  private def extractInputRefs(rexNode: RexNode, textualRepresentation: String): Array[Int] = {
+    val inputReferenceVisitor = new InputRefVisitor
+    rexNode.accept(inputReferenceVisitor)
+    checkState(
+      inputReferenceVisitor.getFields.length == 1,
+      "Failed to find input reference in [%s]",
+      textualRepresentation)
+    inputReferenceVisitor.getFields
   }
 
   private class TemporalJoinConditionExtractor(
@@ -361,69 +377,51 @@ object StreamExecTemporalJoinToCoProcessTranslator {
       if (call.getOperator != TEMPORAL_JOIN_CONDITION) {
         return super.visitCall(call)
       }
+      leftTimeAttribute = Some(call.getOperands.get(0))
+      rightTimeAttribute = Some(call.getOperands.get(1))
 
-      checkState(
-        leftTimeAttribute.isEmpty
-          && rightPrimaryKeyExpression.isEmpty
-          && rightTimeAttribute.isEmpty,
-        "Multiple %s functions in [%s]",
-        TEMPORAL_JOIN_CONDITION,
-        textualRepresentation)
+      rightPrimaryKeyExpression = Some(validateRightPrimaryKey(call.getOperands.get(2)))
 
-      if (TemporalJoinUtil.isRowtimeCall(call)) {
-        leftTimeAttribute = Some(call.getOperands.get(0))
-        rightTimeAttribute = Some(call.getOperands.get(1))
-
-        rightPrimaryKeyExpression = Some(validateRightPrimaryKey(call.getOperands.get(2)))
-
-        if (!isRowtimeIndicatorType(rightTimeAttribute.get.getType)) {
-          throw new ValidationException(
-            s"Non rowtime timeAttribute [${rightTimeAttribute.get.getType}] " +
-              s"used to create TemporalTableFunction")
-        }
-        if (!isRowtimeIndicatorType(leftTimeAttribute.get.getType)) {
-          throw new ValidationException(
-            s"Non rowtime timeAttribute [${leftTimeAttribute.get.getType}] " +
-              s"passed as the argument to TemporalTableFunction")
-        }
+      if (!isRowtimeIndicatorType(rightTimeAttribute.get.getType)) {
+        throw new ValidationException(
+          s"Non rowtime timeAttribute [${rightTimeAttribute.get.getType}] " +
+            s"used in right input of Event-time temporal table join")
       }
-      else if (TemporalJoinUtil.isProctimeCall(call)) {
-        leftTimeAttribute = Some(call.getOperands.get(0))
-        rightPrimaryKeyExpression = Some(validateRightPrimaryKey(call.getOperands.get(1)))
-
-        if (!isProctimeIndicatorType(leftTimeAttribute.get.getType)) {
-          throw new ValidationException(
-            s"Non processing timeAttribute [${leftTimeAttribute.get.getType}] " +
-              s"passed as the argument to TemporalTableFunction")
-        }
-      }
-      else {
-        throw new IllegalStateException(
-          s"Unsupported invocation $call in [$textualRepresentation]")
+      if (!isRowtimeIndicatorType(leftTimeAttribute.get.getType)) {
+        throw new ValidationException(
+          s"Non rowtime timeAttribute [${leftTimeAttribute.get.getType}] " +
+            s"used in in left input of Event-time temporal table join")
       }
       rexBuilder.makeLiteral(true)
     }
 
-    private def validateRightPrimaryKey(rightPrimaryKey: RexNode): RexNode = {
-      if (joinInfo.rightKeys.size() != 1) {
+    private def validateRightPrimaryKey(rightPrimaryKey: RexNode): Array[RexNode]  = {
+      if (!rightPrimaryKey.isInstanceOf[RexCall] ||
+        rightPrimaryKey.asInstanceOf[RexCall].getOperator != TEMPORAL_JOIN_CONDITION_PRIMARY_KEY) {
         throw new ValidationException(
-          s"Only single column join key is supported. " +
-            s"Found ${joinInfo.rightKeys} in [$textualRepresentation]")
-      }
-      val rightJoinKeyInputReference = joinInfo.rightKeys.get(0) + rightKeysStartingOffset
+          s"Non primary key [${rightPrimaryKey.asInstanceOf[RexCall]}] " +
+            s"defined in right input of Event-time temporal table join")
+       }
 
-      val rightPrimaryKeyInputReference = extractInputReference(
+      val rightJoinKeyInputRefs = joinInfo.rightKeys
+        .map(index => index + rightKeysStartingOffset)
+        .toArray
+
+      val rightPrimaryKeyInputRefs = extractInputRefs(
         rightPrimaryKey,
         textualRepresentation)
 
-      if (rightPrimaryKeyInputReference != rightJoinKeyInputReference) {
+      val primaryKeyContainedInJoinKey = rightPrimaryKeyInputRefs.zipWithIndex
+        .map(r => (r._1, rightJoinKeyInputRefs(r._2)))
+        .forall(r => r._1 == r._2)
+      if (!primaryKeyContainedInJoinKey) {
         throw new ValidationException(
-          s"Join key [$rightJoinKeyInputReference] must be the same as " +
-            s"temporal table's primary key [$rightPrimaryKey] " +
+          s"Join key [$rightJoinKeyInputRefs] must be the same as " +
+            s"temporal table's primary key [$rightPrimaryKeyInputRefs] " +
             s"in [$textualRepresentation]")
       }
-
-      rightPrimaryKey
-    }
+      rightPrimaryKey.asInstanceOf[RexCall].getOperands
+        .asScala.toArray
+     }
   }
 }
