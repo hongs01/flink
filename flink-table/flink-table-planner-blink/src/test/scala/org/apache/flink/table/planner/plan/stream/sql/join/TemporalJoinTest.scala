@@ -47,8 +47,19 @@ class TemporalJoinTest extends TableTestBase {
       | currency STRING,
       | rate INT,
       | rowtime TIMESTAMP(3),
-      | WATERMARK FOR rowtime AS rowtime,
-      | PRIMARY KEY(currency) NOT ENFORCED
+      | WATERMARK FOR rowtime AS rowtime
+      |) WITH (
+      | 'connector' = 'COLLECTION',
+      | 'is-bounded' = 'false'
+      |)
+      """.stripMargin)
+
+  util.addTable(
+    """
+      |CREATE TABLE RatesOnly (
+      | currency STRING,
+      | rate INT,
+      | proctime AS PROCTIME()
       |) WITH (
       | 'connector' = 'COLLECTION',
       | 'is-bounded' = 'false'
@@ -57,11 +68,19 @@ class TemporalJoinTest extends TableTestBase {
 
   util.addTable(
     " CREATE VIEW DeduplicatedView as SELECT currency, rate, rowtime FROM " +
-    "  (SELECT *, " +
-    "          ROW_NUMBER() OVER (PARTITION BY currency ORDER BY rowtime DESC) AS rowNum " +
-    "   FROM RatesHistory" +
-    "  )" +
-    "  WHERE rowNum = 1")
+      "  (SELECT *, " +
+      "          ROW_NUMBER() OVER (PARTITION BY currency ORDER BY rowtime DESC) AS rowNum " +
+      "   FROM RatesHistory" +
+      "  )" +
+      "  WHERE rowNum = 1")
+
+  util.addTable(
+    " CREATE VIEW latestView as SELECT currency, rate, proctime FROM " +
+      "  (SELECT *, " +
+      "          ROW_NUMBER() OVER (PARTITION BY currency ORDER BY proctime DESC) AS rowNum " +
+      "   FROM RatesOnly" +
+      "  )" +
+      "  WHERE rowNum = 1")
 
   util.addTable("CREATE VIEW latest_rates AS SELECT currency, LAST_VALUE(rate) AS rate " +
     "FROM RatesHistory " +
@@ -79,12 +98,24 @@ class TemporalJoinTest extends TableTestBase {
   }
 
   @Test
-  def testSimpleVersionedViewJoin(): Unit = {
+  def testSimpleRowtimeVersionedViewJoin(): Unit = {
     val sqlQuery = "SELECT " +
       "o_amount * rate as rate " +
       "FROM Orders AS o JOIN " +
       "DeduplicatedView " +
       "FOR SYSTEM_TIME AS OF o.o_rowtime as r1 " +
+      "on o.o_currency = r1.currency"
+
+    util.verifyPlan(sqlQuery)
+  }
+
+  @Test
+  def testSimpleProctimeVersionedViewJoin(): Unit = {
+    val sqlQuery = "SELECT " +
+      "o_amount * rate as rate " +
+      "FROM Orders AS o JOIN " +
+      "latestView " +
+      "FOR SYSTEM_TIME AS OF o.o_proctime as r1 " +
       "on o.o_currency = r1.currency"
 
     util.verifyPlan(sqlQuery)

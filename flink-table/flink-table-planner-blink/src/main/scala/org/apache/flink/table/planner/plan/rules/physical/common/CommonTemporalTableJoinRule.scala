@@ -18,16 +18,19 @@
 package org.apache.flink.table.planner.plan.rules.physical.common
 
 
+import org.apache.calcite.plan.hep.HepRelVertex
 import org.apache.calcite.rel.RelNode
+import org.apache.calcite.rel.core.TableScan
+import org.apache.calcite.rel.logical.{LogicalProject, LogicalTableScan}
 import org.apache.flink.table.planner.plan.nodes.logical._
-import org.apache.flink.table.planner.plan.schema.TimeIndicatorRelDataType
-import org.apache.calcite.rex.{RexCorrelVariable, RexFieldAccess, RexInputRef, RexNode}
+import org.apache.flink.table.planner.plan.schema.{LegacyTableSourceTable, TableSourceTable, TimeIndicatorRelDataType}
+import org.apache.calcite.rex.{RexCorrelVariable, RexFieldAccess}
 import org.apache.flink.table.api.TableException
+import org.apache.flink.table.connector.source.LookupTableSource
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamExecLegacyTemporalJoin
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamExecLookupJoin
+import org.apache.flink.table.sources.LookupableTableSource
 
-import scala.collection.JavaConversions._
-import scala.collection.JavaConverters._
 
 /**
   * Base implementation that matches temporal join node.
@@ -57,5 +60,65 @@ trait CommonTemporalTableJoinRule {
           "'FOR SYSTEM_TIME AS OF' left table's time attribute field")
     }
     true
+  }
+
+  protected def canConvertToLookupJoin(
+      snapshot: FlinkLogicalSnapshot,
+      snapshotInput: FlinkLogicalRel): Boolean = {
+    val isProcessingTime = snapshot.getPeriod.getType match {
+      case t: TimeIndicatorRelDataType if !t.isEventTime => true
+      case _ => false
+    }
+
+    val tableScan = getTableScan(snapshotInput)
+    val snapshotOnLookupSource = tableScan match {
+      case Some(scan) => isTableSourceScan(scan) && isLookupTableSource(scan)
+      case _ => false
+    }
+
+    isProcessingTime && snapshotOnLookupSource
+  }
+
+  private def getTableScan(snapshotInput: RelNode): Option[TableScan] = {
+    snapshotInput match {
+      case tableScan: TableScan
+      => Some(tableScan)
+      // computed column on lookup table
+      case project: LogicalProject if trimHep(project.getInput).isInstanceOf[TableScan]
+      => Some(trimHep(project.getInput).asInstanceOf[TableScan])
+      case _ => None
+    }
+  }
+
+  private def isTableSourceScan(relNode: RelNode): Boolean = {
+    relNode match {
+      case _: LogicalTableScan | _: FlinkLogicalLegacyTableSourceScan |
+           _: FlinkLogicalTableSourceScan => true
+      case _ => false
+    }
+  }
+
+  private def isLookupTableSource(relNode: RelNode): Boolean = relNode match {
+    case scan: FlinkLogicalLegacyTableSourceScan =>
+      scan.tableSource.isInstanceOf[LookupableTableSource[_]]
+    case scan: FlinkLogicalTableSourceScan =>
+      scan.tableSource.isInstanceOf[LookupTableSource]
+    case scan: LogicalTableScan =>
+      scan.getTable match {
+        case table: LegacyTableSourceTable[_] =>
+          table.tableSource.isInstanceOf[LookupableTableSource[_]]
+        case table: TableSourceTable =>
+          table.tableSource.isInstanceOf[LookupTableSource]
+      }
+    case _ => false
+  }
+
+  /** Trim out the HepRelVertex wrapper and get current relational expression. */
+  protected def trimHep(node: RelNode): RelNode = {
+    node match {
+      case hepRelVertex: HepRelVertex =>
+        hepRelVertex.getCurrentRel
+      case _ => node
+    }
   }
 }

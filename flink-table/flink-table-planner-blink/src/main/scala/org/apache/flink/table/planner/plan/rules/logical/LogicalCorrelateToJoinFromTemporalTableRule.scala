@@ -20,16 +20,16 @@ package org.apache.flink.table.planner.plan.rules.logical
 import org.apache.calcite.plan.RelOptRule.{any, operand}
 import org.apache.calcite.plan.hep.HepRelVertex
 import org.apache.calcite.plan.{RelOptRule, RelOptRuleCall, RelOptRuleOperand}
-import org.apache.calcite.rel.{RelNode}
+import org.apache.calcite.rel.RelNode
 import org.apache.calcite.rel.core.TableScan
-import org.apache.calcite.rel.logical.{LogicalCorrelate, LogicalFilter, LogicalProject, LogicalSnapshot, LogicalTableScan}
+import org.apache.calcite.rel.logical._
 import org.apache.calcite.rex._
-import org.apache.flink.table.api.{TableException, ValidationException}
+import org.apache.flink.table.api.TableException
 import org.apache.flink.table.connector.source.LookupTableSource
 import org.apache.flink.table.planner.plan.nodes.logical.{FlinkLogicalLegacyTableSourceScan, FlinkLogicalTableSourceScan}
 import org.apache.flink.table.planner.plan.nodes.physical.stream.{StreamExecLookupJoin, StreamExecTemporalJoin}
 import org.apache.flink.table.planner.plan.schema.{LegacyTableSourceTable, TableSourceTable, TimeIndicatorRelDataType}
-import org.apache.flink.table.planner.plan.utils.{RexDefaultVisitor, TemporalJoinUtil}
+import org.apache.flink.table.planner.plan.utils.TemporalJoinUtil
 import org.apache.flink.table.sources.LookupableTableSource
 
 import scala.collection.JavaConversions._
@@ -206,36 +206,13 @@ abstract class LogicalCorrelateToJoinFromGeneralTemporalTableRule(
 
   protected def extractSnapshotTimeInputRef(
       leftInput: RelNode,
-      snapshot: LogicalSnapshot): RexInputRef = {
+      snapshot: LogicalSnapshot): Option[RexInputRef] = {
     val leftRowType = leftInput.getRowType
+    val leftFields = leftRowType.getFieldList
     val periodField = snapshot.getPeriod.asInstanceOf[RexFieldAccess].getField
-    val index = leftRowType.getFieldList.indexOf(periodField)
-    RexInputRef.of(index, leftRowType)
-  }
-
-  protected def extractPrimaryKeyInputRefs(
-     leftInput: RelNode,
-     snapshot: LogicalSnapshot,
-     rexBuilder: RexBuilder): Option[Seq[RexNode]] = {
-
-    val rightFields = snapshot.getRowType.getFieldList
-    val fmq = snapshot.getCluster.getMetadataQuery
-    val uniqueKeys = fmq.getUniqueKeys(snapshot.getInput())
-    val fields = snapshot.getRowType.getFieldList
-
-    if (uniqueKeys != null && uniqueKeys.size() > 0) {
-     val leftFieldCnt = leftInput.getRowType.getFieldCount
-      uniqueKeys
-        .filter(_.nonEmpty)
-        .map(_.toArray
-          .map(fields)
-          .map(f => rexBuilder.makeInputRef(
-            f.getType,
-            leftFieldCnt + rightFields.indexOf(f)))
-          .toSeq)
-        .toArray
-        .sortBy(_.length)
-        .headOption
+    if (leftFields.contains(periodField)) {
+      val index = leftRowType.getFieldList.indexOf(periodField)
+      Some(RexInputRef.of(index, leftRowType))
     } else {
       None
     }
@@ -269,44 +246,46 @@ abstract class LogicalCorrelateToJoinFromGeneralTemporalTableRule(
 
     validateSnapshotInCorrelate(snapshot, correlate)
 
+    val (leftJoinKey, rightJoinKey) = {
+      val rexBuilder = correlate.getCluster.getRexBuilder
+      val relBuilder = call.builder()
+      relBuilder.push(leftInput)
+      relBuilder.push(snapshot)
+      val rewriteJoin = relBuilder.join(correlate.getJoinType, joinCondition).build()
+      val joinInfo = rewriteJoin.asInstanceOf[LogicalJoin].analyzeCondition()
+      val leftJoinKey = joinInfo.leftKeys.map(i => rexBuilder.makeInputRef(leftInput, i))
+      val rightJoinKey = joinInfo.rightKeys.map(i => rexBuilder.makeInputRef(leftInput, i))
+      (leftJoinKey, rightJoinKey)
+    }
+
+    val snapshotTimeInputRef = extractSnapshotTimeInputRef(leftInput, snapshot)
+      .getOrElse(throw new TableException("Temporal Table Join requires time attribute in the " +
+        s"left table, but no row time attribute found."))
+
     val rexBuilder = correlate.getCluster.getRexBuilder
-
-
     val temporalCondition = if(isRowTimeTemporalTableJoin(snapshot)) {
-      val snapshotTimeInputRef= extractSnapshotTimeInputRef(leftInput, snapshot)
       val rightTimeInputRef = extractRightTimeInputRef(leftInput, snapshot)
-      val primaryKeyInputRefs = extractPrimaryKeyInputRefs(leftInput, snapshot, rexBuilder)
-
-      if (primaryKeyInputRefs.isDefined && rightTimeInputRef.isDefined) {
-        if (joinKeyContainsPrimaryKey(joinCondition, primaryKeyInputRefs.get)) {
-          val rowTimeTemporalCondition = TemporalJoinUtil.makeRowTimeTemporalJoinConditionCall(
-            rexBuilder, snapshotTimeInputRef, rightTimeInputRef.get, primaryKeyInputRefs.get)
-          Some(rowTimeTemporalCondition)
-        } else {
-          throw new TableException("Event-Time Temporal Table Join requires primary key " +
-            s"contained in join key but the time primary key ${primaryKeyInputRefs} is " +
-            s"not in join key ${primaryKeyInputRefs.get}.")
-        }
-      } else {
-        throw new TableException("Event-Time Temporal Table Join requires both primary key and " +
-          s"time attribute in temporal table, but the actual primaryKey is " +
-          s"${primaryKeyInputRefs.getOrElse("NULL")}, time attribute is" +
-          s"${rightTimeInputRef.getOrElse("NULL")}.")
+      if (rightTimeInputRef.isEmpty) {
+          throw new TableException("Event-Time Temporal Table Join requires both" +
+            s" primary key and row time attribute in temporal table," +
+            s" but no row time attribute found.")
       }
+      // Deal primary key in TemporalJoinRewriteUniqueKeyRule
+      TemporalJoinUtil.makeRowTimeTemporalJoinConditionCall(rexBuilder, snapshotTimeInputRef,
+        rightTimeInputRef.get, leftJoinKey, rightJoinKey)
     } else {
-      None
+      TemporalJoinUtil.makeProcTimeTemporalJoinConditionCall(
+        rexBuilder, snapshotTimeInputRef, leftJoinKey, rightJoinKey)
     }
 
     val builder = call.builder()
-    val condition = temporalCondition match {
-      case Some(con) => builder.and(joinCondition, con)
-      case _ =>  joinCondition
-    }
+    val condition =  builder.and(joinCondition, temporalCondition)
 
     builder.push(leftInput)
     builder.push(snapshot)
-    val rewriteJoin = builder.join(correlate.getJoinType, condition).build()
-    call.transformTo(rewriteJoin)
+    builder.join(correlate.getJoinType, condition)
+    val temporalJoin = builder.build()
+    call.transformTo(temporalJoin)
   }
 
   private def isRowTimeTemporalTableJoin(snapshot: LogicalSnapshot): Boolean =
@@ -314,12 +293,6 @@ abstract class LogicalCorrelateToJoinFromGeneralTemporalTableRule(
       case t: TimeIndicatorRelDataType if t.isEventTime => true
       case _ => false
     }
-
-  private def joinKeyContainsPrimaryKey(
-      joinCondition: RexNode,
-      primaryKey: Seq[RexNode]) : Boolean = {
-    true
-  }
 }
 
 /**

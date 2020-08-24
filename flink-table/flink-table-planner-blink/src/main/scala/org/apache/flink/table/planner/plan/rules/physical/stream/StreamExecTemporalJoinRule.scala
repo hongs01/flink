@@ -24,18 +24,11 @@ import org.apache.calcite.plan.RelOptRule.{any, operand}
 import org.apache.calcite.plan.{RelOptRule, RelOptRuleCall, RelTraitSet}
 import org.apache.calcite.rel.RelNode
 import org.apache.calcite.rel.core.JoinRelType
-import org.apache.calcite.rex.{RexFieldAccess, RexInputRef, RexNode}
 import org.apache.flink.table.planner.plan.`trait`.FlinkRelDistribution
-import org.apache.flink.table.planner.plan.metadata.FlinkRelMetadataQuery
 import org.apache.flink.table.planner.plan.nodes.FlinkConventions
 import org.apache.flink.table.planner.plan.nodes.logical._
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamExecTemporalJoin
 import org.apache.flink.table.planner.plan.rules.physical.common.CommonTemporalTableJoinRule
-import org.apache.flink.table.planner.plan.schema.TimeIndicatorRelDataType
-import org.apache.flink.table.planner.plan.utils.TemporalJoinUtil
-
-import scala.collection.JavaConversions._
-import scala.collection.JavaConverters._
 
 /**
  * Rule that matches a temporal join node and converts it to [[StreamExecTemporalJoin]],
@@ -54,11 +47,13 @@ class StreamExecTemporalJoinRule
   override def matches(call: RelOptRuleCall): Boolean = {
     val join = call.rel[FlinkLogicalJoin](0)
     val snapshot = call.rel[FlinkLogicalSnapshot](2)
+    val snapshotInput = call.rel[FlinkLogicalRel](3)
 
     val isTemporalJoin = matches(snapshot)
-    val supportedJoinTypes = Seq(JoinRelType.INNER, JoinRelType.LEFT)
+    val canConvertToLookup = canConvertToLookupJoin(snapshot, snapshotInput)
+    val supportedJoinTypes = Seq(JoinRelType.INNER)
 
-    isTemporalJoin && supportedJoinTypes.contains(join.getJoinType)
+    isTemporalJoin && !canConvertToLookup && supportedJoinTypes.contains(join.getJoinType)
   }
 
   override def onMatch(call: RelOptRuleCall): Unit = {

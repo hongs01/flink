@@ -318,7 +318,7 @@ object StreamExecTemporalJoinToCoProcessTranslator {
           .filter(f => f.getType.isInstanceOf[TimeIndicatorRelDataType])
         if (leftTimeAttributes.isEmpty) {
           throw new ValidationException(
-            s"Missing timeAttribute in the left input of Processing-Time temporal join")
+            s"Missing timeAttribute in the left table of Processing-Time temporal join")
         }
         val leftTimeAttributeInputRef = leftTimeAttributes
           .map(f => f.getIndex)
@@ -377,10 +377,11 @@ object StreamExecTemporalJoinToCoProcessTranslator {
       if (call.getOperator != TEMPORAL_JOIN_CONDITION) {
         return super.visitCall(call)
       }
+
       leftTimeAttribute = Some(call.getOperands.get(0))
       rightTimeAttribute = Some(call.getOperands.get(1))
 
-      rightPrimaryKeyExpression = Some(validateRightPrimaryKey(call.getOperands.get(2)))
+      rightPrimaryKeyExpression = Some(validateRightPrimaryKey(call.getOperands.get(4)))
 
       if (!isRowtimeIndicatorType(rightTimeAttribute.get.getType)) {
         throw new ValidationException(
@@ -399,7 +400,7 @@ object StreamExecTemporalJoinToCoProcessTranslator {
       if (!rightPrimaryKey.isInstanceOf[RexCall] ||
         rightPrimaryKey.asInstanceOf[RexCall].getOperator != TEMPORAL_JOIN_CONDITION_PRIMARY_KEY) {
         throw new ValidationException(
-          s"Non primary key [${rightPrimaryKey.asInstanceOf[RexCall]}] " +
+          s"No primary key [${rightPrimaryKey.asInstanceOf[RexCall]}] " +
             s"defined in right input of Event-time temporal table join")
        }
 
