@@ -56,6 +56,20 @@ class TemporalJoinTest extends TableTestBase {
 
   util.addTable(
     """
+      |CREATE TABLE RatesHistoryWithPK (
+      | currency STRING,
+      | rate INT,
+      | rowtime TIMESTAMP(3),
+      | WATERMARK FOR rowtime AS rowtime,
+      | PRIMARY KEY(currency) NOT ENFORCED
+      |) WITH (
+      | 'connector' = 'COLLECTION',
+      | 'is-bounded' = 'false'
+      |)
+      """.stripMargin)
+
+  util.addTable(
+    """
       |CREATE TABLE RatesOnly (
       | currency STRING,
       | rate INT,
@@ -91,7 +105,7 @@ class TemporalJoinTest extends TableTestBase {
     val sqlQuery = "SELECT " +
       "o_amount * rate as rate " +
       "FROM Orders AS o JOIN " +
-      "RatesHistory FOR SYSTEM_TIME AS OF o.o_rowtime as r " +
+      "RatesHistoryWithPK FOR SYSTEM_TIME AS OF o.o_rowtime as r " +
       "on o.o_currency = r.currency"
 
     util.verifyPlan(sqlQuery)

@@ -299,11 +299,10 @@ class TemporalJoinITCase(state: StateBackendMode)
     execInsertSqlAndWaitResult(insertSql)
     val rawResult = TestValuesTableFactory.getRawResults("rowtime_sink")
     val expected = List(
-      "+I(1,Euro,12,2020-08-16T00:01:01,114,2020-08-15T08:00)",
-      "+I(2,US Dollar,1,2020-08-16T00:01:08,102,2020-08-15T08:00)",
       "+I(3,US Dollar,14,2020-08-16T00:01:12,106,2020-08-16T00:01:12)",
       "+I(4,US Dollar,18,2020-08-16T00:01:14,106,2020-08-16T00:01:12)",
-      "+I(5,RMB,40,2020-08-16T00:02:01,702,2020-08-15T08:00)")
+      "+I(5,RMB,40,2020-08-16T00:02:01,702,2020-08-15T08:00)",
+      "+I(5,RMB,40,2020-08-16T00:02:30,702,2020-08-15T08:00)")
     assertEquals(expected.sorted, rawResult.sorted)
   }
 

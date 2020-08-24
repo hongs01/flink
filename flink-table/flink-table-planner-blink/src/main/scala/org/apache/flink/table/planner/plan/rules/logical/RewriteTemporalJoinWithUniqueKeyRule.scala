@@ -22,8 +22,11 @@ import org.apache.calcite.plan.RelOptRule.{any, operand}
 import org.apache.calcite.plan.{RelOptRule, RelOptRuleCall}
 import org.apache.calcite.rel.RelNode
 import org.apache.calcite.rel.core.JoinRelType
+import org.apache.calcite.rel.metadata.RelMetadataQuery
 import org.apache.calcite.rex.{RexBuilder, RexCall, RexNode, RexShuttle}
 import org.apache.flink.table.api.TableException
+import org.apache.flink.table.planner.calcite.FlinkRelOptClusterFactory
+import org.apache.flink.table.planner.plan.metadata.FlinkRelMetadataQuery
 import org.apache.flink.table.planner.plan.nodes.logical.{FlinkLogicalJoin, FlinkLogicalRel, FlinkLogicalSnapshot}
 import org.apache.flink.table.planner.plan.rules.physical.common.CommonTemporalTableJoinRule
 import org.apache.flink.table.planner.plan.schema.TimeIndicatorRelDataType
@@ -100,7 +103,8 @@ class RewriteTemporalJoinWithUniqueKeyRule extends RelOptRule(
       snapshot: FlinkLogicalSnapshot,
       rexBuilder: RexBuilder): Option[Seq[RexNode]] = {
     val rightFields = snapshot.getRowType.getFieldList
-    val fmq = snapshot.getCluster.getMetadataQuery
+    val fmq = FlinkRelMetadataQuery.reuseOrCreate(snapshot.getCluster.getMetadataQuery)
+
     val uniqueKeys = fmq.getUniqueKeys(snapshot.getInput())
     val fields = snapshot.getRowType.getFieldList
 
