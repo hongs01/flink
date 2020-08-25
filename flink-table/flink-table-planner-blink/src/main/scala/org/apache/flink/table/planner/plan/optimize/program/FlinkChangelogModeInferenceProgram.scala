@@ -518,7 +518,7 @@ class FlinkChangelogModeInferenceProgram extends FlinkOptimizeProgram[StreamOpti
 
         // the left input required trait depends on it's parent in temporal join
         // the left input will send message to parent
-        val requiredUpdateBeforeByParent = requiredTrait.updateKind == UpdateKind.BEFORE_AND_AFTER
+        val requiredUpdateBeforeByParent = requiredTrait.updateKind == UpdateKind.ONLY_UPDATE_AFTER
         val leftInputModifyKindSet = getModifyKindSet(left)
         val leftRequiredTrait = if (requiredUpdateBeforeByParent) {
           beforeAfterOrNone(leftInputModifyKindSet)

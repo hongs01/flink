@@ -17,10 +17,6 @@
  */
 package org.apache.flink.table.planner.plan.stream.sql.join
 
-import java.sql.Timestamp
-
-import org.apache.flink.api.scala._
-import org.apache.flink.table.api._
 import org.apache.flink.table.planner.utils.{StreamTableTestUtil, TableTestBase}
 import org.junit.Test
 
@@ -130,18 +126,6 @@ class TemporalJoinTest extends TableTestBase {
       "FROM Orders AS o JOIN " +
       "latestView " +
       "FOR SYSTEM_TIME AS OF o.o_proctime as r1 " +
-      "on o.o_currency = r1.currency"
-
-    util.verifyPlan(sqlQuery)
-  }
-
-  @Test
-  def testSimpleViewRowTimeJoin(): Unit = {
-    val sqlQuery = "SELECT " +
-      "o_amount * rate as rate " +
-      "FROM Orders AS o JOIN " +
-      "latest_rates " +
-      "FOR SYSTEM_TIME AS OF o.o_rowtime as r1 " +
       "on o.o_currency = r1.currency"
 
     util.verifyPlan(sqlQuery)

@@ -39,6 +39,7 @@ import org.apache.flink.table.runtime.typeutils.InternalTypeInfo;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
@@ -160,7 +161,6 @@ public class TemporalRowTimeJoinOperator
 	@Override
 	public void processElement1(StreamRecord<RowData> element) throws Exception {
 		RowData row = element.getValue();
-
 		leftState.put(getNextLeftIndex(), row);
 		registerSmallestTimer(getLeftTime(row)); // Timer to emit and clean up the state
 
@@ -170,7 +170,6 @@ public class TemporalRowTimeJoinOperator
 	@Override
 	public void processElement2(StreamRecord<RowData> element) throws Exception {
 		RowData row = element.getValue();
-
 		long rowTime = getRightTime(row);
 		rightState.put(row, rowTime);
 		registerSmallestTimer(rowTime); // Timer to clean up the state
@@ -182,7 +181,7 @@ public class TemporalRowTimeJoinOperator
 	public void onEventTime(InternalTimer<Object, VoidNamespace> timer) throws Exception {
 		registeredEventTimer.clear();
 		long lastUnprocessedTime = emitResultAndCleanUpState(timerService.currentWatermark());
-		if (lastUnprocessedTime < Long.MAX_VALUE) {
+ 		if (lastUnprocessedTime < Long.MAX_VALUE) {
 			registerTimer(lastUnprocessedTime);
 		}
 
@@ -247,10 +246,9 @@ public class TemporalRowTimeJoinOperator
 	private void cleanupState(long currentWatermark, List<RowData> rightRowsSorted) throws Exception {
 		int i = 0;
 		int indexToKeep = firstIndexToKeep(currentWatermark, rightRowsSorted);
-		RowData indexToKeepRow = rightRowsSorted.get(indexToKeep);
 
-		// the latest data is retract means the latest version has expired
-		if (indexToKeep >= 0 && RowDataUtil.isRetractMsg(indexToKeepRow)) {
+		// the latest data is delete means the correspond version has expired
+		if (indexToKeep >= 0 && RowDataUtil.isDeleteMsg(rightRowsSorted.get(indexToKeep))) {
 			indexToKeep += 1;
 		}
 		// clean old version data that behind current watermark
@@ -297,7 +295,7 @@ public class TemporalRowTimeJoinOperator
 	private Optional<RowData> latestRightRowToJoin(List<RowData> rightRowsSorted, long leftTime) {
 		int indexToKeep = firstIndexToKeep(leftTime, rightRowsSorted);
 		// the latest data is retract means the latest version has expired
-		if (indexToKeep < 0 || RowDataUtil.isRetractMsg(rightRowsSorted.get(indexToKeep))) {
+		if (indexToKeep < 0 || RowDataUtil.isDeleteMsg(rightRowsSorted.get(indexToKeep))) {
 			return Optional.empty();
 		} else {
 			return Optional.of(rightRowsSorted.get(indexToKeep));

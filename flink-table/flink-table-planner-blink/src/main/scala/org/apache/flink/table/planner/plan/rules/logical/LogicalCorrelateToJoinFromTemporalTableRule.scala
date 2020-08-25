@@ -197,7 +197,7 @@ abstract class LogicalCorrelateToJoinFromGeneralTemporalTableRule(
     if (timeAttributeFields != null && timeAttributeFields.length == 1) {
       val leftFieldCnt = leftInput.getRowType.getFieldCount
       val timeColIndex = leftFieldCnt + rightFields.indexOf(timeAttributeFields.get(0))
-      val timeColDataType = timeAttributeFields.get(0).getType;
+      val timeColDataType = timeAttributeFields.get(0).getType
       Some(rexBuilder.makeInputRef(timeColDataType, timeColIndex))
     } else {
       None
@@ -254,7 +254,11 @@ abstract class LogicalCorrelateToJoinFromGeneralTemporalTableRule(
       val rewriteJoin = relBuilder.join(correlate.getJoinType, joinCondition).build()
       val joinInfo = rewriteJoin.asInstanceOf[LogicalJoin].analyzeCondition()
       val leftJoinKey = joinInfo.leftKeys.map(i => rexBuilder.makeInputRef(leftInput, i))
-      val rightJoinKey = joinInfo.rightKeys.map(i => rexBuilder.makeInputRef(leftInput, i))
+      val rightJoinKey = joinInfo.rightKeys.map(i => {
+        val leftFieldCnt = leftInput.getRowType.getFieldCount
+        val leftKeyType = snapshot.getRowType.getFieldList.get(i).getType
+        rexBuilder.makeInputRef(leftKeyType, leftFieldCnt + i)
+      })
       (leftJoinKey, rightJoinKey)
     }
 

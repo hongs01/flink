@@ -65,7 +65,7 @@ object TemporalJoinUtil {
       // Only left time attribute is required for processing-time temporal table join,
       // primary key is optional
       OperandTypes.sequence(
-        "'(LEFT_TIME_ATTRIBUTE, LEFT_KEY, RIGHT_KEY, PRIMARY_KEY)'",
+        "'(LEFT_TIME_ATTRIBUTE, LEFT_KEY, RIGHT_KEY)'",
         OperandTypes.DATETIME,
         OperandTypes.ANY,
         OperandTypes.ANY,
@@ -186,8 +186,8 @@ object TemporalJoinUtil {
     var rowtimeJoin: Boolean = false
     val visitor = new RexVisitorImpl[Unit](true) {
       override def visitCall(call: RexCall): Unit = {
-        if (call.getOperator == TEMPORAL_JOIN_CONDITION) {
-          rowtimeJoin = true
+        if (isRowTimeTemporalJoinConditionCall(call)) {
+           rowtimeJoin = true
         } else {
           call.getOperands.foreach(node => node.accept(this))
         }
@@ -195,6 +195,10 @@ object TemporalJoinUtil {
     }
     nonEquiJoinRex.accept(visitor)
     rowtimeJoin
+  }
+
+  def isRowTimeTemporalJoinConditionCall(rexCall: RexCall): Boolean = {
+    rexCall.getOperator == TEMPORAL_JOIN_CONDITION && rexCall.operands.length > 3
   }
 
 }

@@ -18,29 +18,19 @@
 
 package org.apache.flink.table.planner.runtime.stream.sql
 
-import java.sql.Timestamp
+import java.lang.{Long => JLong}
+import java.time.LocalDateTime
 
-import org.apache.flink.api.scala._
 import org.apache.flink.streaming.api.TimeCharacteristic
-import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor
-import org.apache.flink.streaming.api.scala.StreamExecutionEnvironment
-import org.apache.flink.streaming.api.windowing.time.Time
-import org.apache.flink.table.api._
-import org.apache.flink.table.api.bridge.scala._
 import org.apache.flink.table.planner.factories.TestValuesTableFactory
+import org.apache.flink.table.planner.runtime.utils.StreamingWithStateTestBase
 import org.apache.flink.table.planner.runtime.utils.StreamingWithStateTestBase.StateBackendMode
-import org.apache.flink.table.planner.runtime.utils.{StreamingWithStateTestBase, TestingAppendSink}
-import org.apache.flink.table.planner.utils.TableTestUtil
-import org.apache.flink.types.{Row, RowKind}
 import org.junit.Assert.assertEquals
 import org.junit._
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
 
-import scala.collection.mutable
 import scala.collection.JavaConversions._
-import java.lang.{Long => JLong}
-import java.time.LocalDateTime
 
 @RunWith(classOf[Parameterized])
 class TemporalJoinITCase(state: StateBackendMode)
@@ -107,38 +97,38 @@ class TemporalJoinITCase(state: StateBackendMode)
     // for Event-Time temporal table join
     val orderData2 = List(
       TestValuesTableFactory.changelogRow("+I", JLong.valueOf(1L), "Euro", JLong.valueOf(12L),
-        LocalDateTime.parse("2020-08-16T00:01:01")),
+        LocalDateTime.parse("2020-08-15T00:01:00")),
       TestValuesTableFactory.changelogRow("+I", JLong.valueOf(2L), "US Dollar", JLong.valueOf(1L),
-        LocalDateTime.parse("2020-08-16T00:01:08")),
-      TestValuesTableFactory.changelogRow("+I", JLong.valueOf(3L), "US Dollar", JLong.valueOf(14L),
-        LocalDateTime.parse("2020-08-16T00:01:12")),
-      TestValuesTableFactory.changelogRow("+I", JLong.valueOf(4L), "US Dollar", JLong.valueOf(18L),
-        LocalDateTime.parse("2020-08-16T00:01:14")),
-      TestValuesTableFactory.changelogRow("+I", JLong.valueOf(5L), "RMB", JLong.valueOf(40L),
-        LocalDateTime.parse("2020-08-16T00:02:01")),
-      TestValuesTableFactory.changelogRow("+I", JLong.valueOf(5L), "RMB", JLong.valueOf(40L),
-        LocalDateTime.parse("2020-08-16T00:02:30")))
+        LocalDateTime.parse("2020-08-15T00:02:00")),
+      TestValuesTableFactory.changelogRow("+I", JLong.valueOf(3L), "RMB", JLong.valueOf(40L),
+        LocalDateTime.parse("2020-08-15T00:03:00")),
+      TestValuesTableFactory.changelogRow("+I", JLong.valueOf(4L), "Euro", JLong.valueOf(14L),
+        LocalDateTime.parse("2020-08-16T00:02:00")),
+      TestValuesTableFactory.changelogRow("+I", JLong.valueOf(5L), "US Dollar", JLong.valueOf(18L),
+        LocalDateTime.parse("2020-08-16T00:03:01")),
+      TestValuesTableFactory.changelogRow("+I", JLong.valueOf(6L), "RMB", JLong.valueOf(40L),
+        LocalDateTime.parse("2020-08-16T00:03:00")))
     val dataId3 = TestValuesTableFactory.registerData(orderData2)
 
     val currencyData2 = List(
       TestValuesTableFactory.changelogRow("+I", "Euro", JLong.valueOf(114L),
-        LocalDateTime.parse("2020-08-15T08:00:00")),
+        LocalDateTime.parse("2020-08-15T00:00:00")),
       TestValuesTableFactory.changelogRow("+I", "US Dollar", JLong.valueOf(102L),
-        LocalDateTime.parse("2020-08-15T08:00:00")),
+        LocalDateTime.parse("2020-08-15T00:00:00")),
       TestValuesTableFactory.changelogRow("+I", "Yen", JLong.valueOf(1L),
-        LocalDateTime.parse("2020-08-15T08:00:00")),
+        LocalDateTime.parse("2020-08-15T00:00:00")),
       TestValuesTableFactory.changelogRow("+I", "RMB", JLong.valueOf(702L),
-        LocalDateTime.parse("2020-08-15T08:00:00")),
+        LocalDateTime.parse("2020-08-15T00:00:00")),
       TestValuesTableFactory.changelogRow("-U", "Euro", JLong.valueOf(114L),
-        LocalDateTime.parse("2020-08-16T00:01:12")),
+        LocalDateTime.parse("2020-08-16T00:01:00")),
       TestValuesTableFactory.changelogRow("+U", "Euro",  JLong.valueOf(118L),
-        LocalDateTime.parse("2020-08-16T00:01:12")),
+        LocalDateTime.parse("2020-08-16T00:01:00")),
       TestValuesTableFactory.changelogRow("-U", "US Dollar", JLong.valueOf(102L),
-        LocalDateTime.parse("2020-08-16T00:01:12")),
+        LocalDateTime.parse("2020-08-16T00:02:00")),
       TestValuesTableFactory.changelogRow("+U", "US Dollar",  JLong.valueOf(106L),
-        LocalDateTime.parse("2020-08-16T00:01:12")),
+        LocalDateTime.parse("2020-08-16T00:02:00")),
       TestValuesTableFactory.changelogRow("-D","RMB", JLong.valueOf(708L),
-        LocalDateTime.parse("2020-08-16T00:02:05")))
+        LocalDateTime.parse("2020-08-16T00:02:00")))
     val dataId4 = TestValuesTableFactory.registerData(currencyData2)
 
     tEnv.executeSql(
@@ -148,7 +138,7 @@ class TemporalJoinITCase(state: StateBackendMode)
          |  currency STRING,
          |  amount BIGINT,
          |  order_time TIMESTAMP(3),
-         |  WATERMARK FOR order_time AS order_time - interval '10' SECOND
+         |  WATERMARK FOR order_time AS order_time
          |) WITH (
          |  'connector' = 'values',
          |  'data-id' = '$dataId3'
@@ -170,20 +160,21 @@ class TemporalJoinITCase(state: StateBackendMode)
          |)
          |""".stripMargin)
 
-
     val currencyData3 = List(
       TestValuesTableFactory.changelogRow("+I", "Euro", JLong.valueOf(114L),
-        LocalDateTime.parse("2020-08-15T08:00:00")),
+        LocalDateTime.parse("2020-08-15T00:00:00")),
       TestValuesTableFactory.changelogRow("+I", "US Dollar", JLong.valueOf(102L),
-        LocalDateTime.parse("2020-08-15T08:00:00")),
+        LocalDateTime.parse("2020-08-15T00:00:00")),
       TestValuesTableFactory.changelogRow("+I", "Yen", JLong.valueOf(1L),
-        LocalDateTime.parse("2020-08-15T08:00:00")),
+        LocalDateTime.parse("2020-08-15T00:00:00")),
       TestValuesTableFactory.changelogRow("+I", "RMB", JLong.valueOf(702L),
-        LocalDateTime.parse("2020-08-15T08:00:00")),
+        LocalDateTime.parse("2020-08-15T00:00:00")),
+      TestValuesTableFactory.changelogRow("+I", "Yen",  JLong.valueOf(118L),
+        LocalDateTime.parse("2020-08-16T00:01:00")),
       TestValuesTableFactory.changelogRow("+I", "Euro",  JLong.valueOf(118L),
-        LocalDateTime.parse("2020-08-16T00:01:12")),
+        LocalDateTime.parse("2020-08-16T00:01:00")),
       TestValuesTableFactory.changelogRow("+I", "US Dollar",  JLong.valueOf(106L),
-        LocalDateTime.parse("2020-08-16T00:01:12")))
+        LocalDateTime.parse("2020-08-16T00:02:00")))
     val dataId5 = TestValuesTableFactory.registerData(currencyData3)
     // append-only table
     tEnv.executeSql(
@@ -192,7 +183,7 @@ class TemporalJoinITCase(state: StateBackendMode)
          |  currency STRING,
          |  rate  BIGINT,
          |  currency_time TIMESTAMP(3),
-         |  WATERMARK FOR currency_time AS currency_time - interval '10' SECOND
+         |  WATERMARK FOR currency_time AS currency_time
          |) WITH (
          |  'connector' = 'values',
          |  'data-id' = '$dataId5',
@@ -276,11 +267,11 @@ class TemporalJoinITCase(state: StateBackendMode)
     execInsertSqlAndWaitResult(insertSql)
     val rawResult = TestValuesTableFactory.getRawResults("rowtime_sink")
     val expected = List(
-     "+I(1,Euro,12,2020-08-16T00:01:01,114,2020-08-15T08:00)",
-      "+I(2,US Dollar,1,2020-08-16T00:01:08,102,2020-08-15T08:00)",
-      "+I(3,US Dollar,14,2020-08-16T00:01:12,106,2020-08-16T00:01:12)",
-      "+I(4,US Dollar,18,2020-08-16T00:01:14,106,2020-08-16T00:01:12)",
-      "+I(5,RMB,40,2020-08-16T00:02:01,702,2020-08-15T08:00)")
+      "+I(1,Euro,12,2020-08-15T00:01,114,2020-08-15T00:00)",
+      "+I(2,US Dollar,1,2020-08-15T00:02,102,2020-08-15T00:00)",
+      "+I(3,RMB,40,2020-08-15T00:03,702,2020-08-15T00:00)",
+      "+I(4,Euro,14,2020-08-16T00:02,118,2020-08-16T00:01)",
+      "+I(5,US Dollar,18,2020-08-16T00:03:01,106,2020-08-16T00:02)")
     assertEquals(expected.sorted, rawResult.sorted)
   }
 
@@ -299,10 +290,12 @@ class TemporalJoinITCase(state: StateBackendMode)
     execInsertSqlAndWaitResult(insertSql)
     val rawResult = TestValuesTableFactory.getRawResults("rowtime_sink")
     val expected = List(
-      "+I(3,US Dollar,14,2020-08-16T00:01:12,106,2020-08-16T00:01:12)",
-      "+I(4,US Dollar,18,2020-08-16T00:01:14,106,2020-08-16T00:01:12)",
-      "+I(5,RMB,40,2020-08-16T00:02:01,702,2020-08-15T08:00)",
-      "+I(5,RMB,40,2020-08-16T00:02:30,702,2020-08-15T08:00)")
+      "+I(1,Euro,12,2020-08-15T00:01,114,2020-08-15T00:00)",
+      "+I(2,US Dollar,1,2020-08-15T00:02,102,2020-08-15T00:00)",
+      "+I(3,RMB,40,2020-08-15T00:03,702,2020-08-15T00:00)",
+      "+I(4,Euro,14,2020-08-16T00:02,118,2020-08-16T00:01)",
+      "+I(5,US Dollar,18,2020-08-16T00:03:01,106,2020-08-16T00:02)",
+      "+I(6,RMB,40,2020-08-16T00:03,702,2020-08-15T00:00)")
     assertEquals(expected.sorted, rawResult.sorted)
   }
 

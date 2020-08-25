@@ -31,7 +31,7 @@ import org.apache.flink.streaming.api.transformations.TwoInputTransformation
 import org.apache.flink.table.api.{TableConfig, TableException, ValidationException}
 import org.apache.flink.table.data.RowData
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory
-import org.apache.flink.table.planner.calcite.FlinkTypeFactory.isRowtimeIndicatorType
+import org.apache.flink.table.planner.calcite.FlinkTypeFactory.{isRowtimeIndicatorType, isProctimeIndicatorType}
 import org.apache.flink.table.planner.codegen.{CodeGeneratorContext, ExprCodeGenerator, FunctionCodeGenerator}
 import org.apache.flink.table.planner.delegation.StreamPlanner
 import org.apache.flink.table.planner.plan.nodes.common.CommonPhysicalJoin
@@ -188,9 +188,9 @@ class StreamExecTemporalJoinToCoProcessTranslator private(
   rexBuilder: RexBuilder,
   leftTimeAttributeInputReference: Int,
   rightTimeAttributeInputReference: Option[Int],
-  remainingNonEquiJoinPredicates: Option[RexNode]) {
+  remainingNonEquiJoinPredicates: RexNode) {
 
-  val nonEquiJoinPredicates: Option[RexNode] = remainingNonEquiJoinPredicates
+  val nonEquiJoinPredicates: Option[RexNode] = Some(remainingNonEquiJoinPredicates)
 
   def getLeftKeySelector: RowDataKeySelector = {
     KeySelectorUtil.getRowDataSelector(
@@ -289,15 +289,11 @@ object StreamExecTemporalJoinToCoProcessTranslator {
       joinInfo,
       rexBuilder)
 
-    val (leftTimeAttributeInputRef, rightTimeAttributeInputRef, remainingNonEquiJoinPredicates) =
-      if (TemporalJoinUtil.isRowTimeJoin(rexBuilder, joinInfo)) {
-      checkState(
-        !joinInfo.isEqui,
-        "Missing %s in Event-Time temporal join condition",
-        TEMPORAL_JOIN_CONDITION)
-      val nonEquiJoinRex: RexNode = joinInfo.getRemaining(rexBuilder)
-      val remainingNonEquiJoinPredicates = temporalJoinConditionExtractor.apply(nonEquiJoinRex)
+    val nonEquiJoinRex: RexNode = joinInfo.getRemaining(rexBuilder)
+    val remainingNonEquiJoinPredicates = temporalJoinConditionExtractor.apply(nonEquiJoinRex)
 
+    val (leftTimeAttributeInputRef, rightTimeAttributeInputRef) =
+      if (TemporalJoinUtil.isRowTimeJoin(rexBuilder, joinInfo)) {
       checkState(
         temporalJoinConditionExtractor.leftTimeAttribute.isDefined &&
           temporalJoinConditionExtractor.rightPrimaryKeyExpression.isDefined,
@@ -311,8 +307,7 @@ object StreamExecTemporalJoinToCoProcessTranslator {
               extractInputRef(
                 rightTimeAttribute,
                 textualRepresentation
-              ) - leftType.getFieldCount),
-          Some(remainingNonEquiJoinPredicates))
+              ) - leftType.getFieldCount))
       } else {
         val leftTimeAttributes = leftInput.getRowType.getFieldList
           .filter(f => f.getType.isInstanceOf[TimeIndicatorRelDataType])
@@ -323,7 +318,7 @@ object StreamExecTemporalJoinToCoProcessTranslator {
         val leftTimeAttributeInputRef = leftTimeAttributes
           .map(f => f.getIndex)
           .head
-        (leftTimeAttributeInputRef, None, None)
+        (leftTimeAttributeInputRef, None)
       }
 
     new StreamExecTemporalJoinToCoProcessTranslator(
@@ -378,20 +373,27 @@ object StreamExecTemporalJoinToCoProcessTranslator {
         return super.visitCall(call)
       }
 
-      leftTimeAttribute = Some(call.getOperands.get(0))
-      rightTimeAttribute = Some(call.getOperands.get(1))
-
-      rightPrimaryKeyExpression = Some(validateRightPrimaryKey(call.getOperands.get(4)))
-
-      if (!isRowtimeIndicatorType(rightTimeAttribute.get.getType)) {
-        throw new ValidationException(
-          s"Non rowtime timeAttribute [${rightTimeAttribute.get.getType}] " +
-            s"used in right input of Event-time temporal table join")
-      }
-      if (!isRowtimeIndicatorType(leftTimeAttribute.get.getType)) {
-        throw new ValidationException(
-          s"Non rowtime timeAttribute [${leftTimeAttribute.get.getType}] " +
-            s"used in in left input of Event-time temporal table join")
+      if (TemporalJoinUtil.isRowTimeTemporalJoinConditionCall(call)) {
+        leftTimeAttribute = Some(call.getOperands.get(0))
+        rightTimeAttribute = Some(call.getOperands.get(1))
+        rightPrimaryKeyExpression = Some(validateRightPrimaryKey(call.getOperands.get(4)))
+        if (!isRowtimeIndicatorType(rightTimeAttribute.get.getType)) {
+          throw new ValidationException(
+            s"Non rowtime timeAttribute [${rightTimeAttribute.get.getType}] " +
+              s"used in right input of Event-time temporal table join")
+        }
+        if (!isRowtimeIndicatorType(leftTimeAttribute.get.getType)) {
+          throw new ValidationException(
+            s"Non rowtime timeAttribute [${leftTimeAttribute.get.getType}] " +
+              s"used in in left input of Event-time temporal table join")
+        }
+      } else {
+        leftTimeAttribute = Some(call.getOperands.get(0))
+        if (!isProctimeIndicatorType(leftTimeAttribute.get.getType)) {
+          throw new ValidationException(
+            s"Non rowtime timeAttribute [${leftTimeAttribute.get.getType}] " +
+              s"used in in left input of Event-time temporal table join")
+        }
       }
       rexBuilder.makeLiteral(true)
     }
