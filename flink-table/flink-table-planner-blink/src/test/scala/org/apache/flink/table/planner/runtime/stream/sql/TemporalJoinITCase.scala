@@ -258,8 +258,7 @@ class TemporalJoinITCase(state: StateBackendMode)
     env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
 
     val insertSql = "INSERT INTO rowtime_sink " +
-      "SELECT o.order_id, o.currency, o.amount, o.order_time, r.rate," +
-      " cast(r.currency_time as TIMESTAMP(3)) " +
+      "SELECT o.order_id, o.currency, o.amount, o.order_time, r.rate, r.currency_time " +
       " FROM orders_rowtime AS o JOIN " +
       " versioned_currency " +
       " FOR SYSTEM_TIME AS OF o.order_time as r " +
@@ -281,8 +280,7 @@ class TemporalJoinITCase(state: StateBackendMode)
     env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
 
     val insertSql = "INSERT INTO rowtime_sink " +
-      "SELECT o.order_id, o.currency, o.amount, o.order_time, r.rate," +
-      " cast(r.currency_time as TIMESTAMP(3)) " +
+      "SELECT o.order_id, o.currency, o.amount, o.order_time, r.rate, r.currency_time " +
       " FROM orders_rowtime AS o JOIN " +
       " versioned_currency_view " +
       " FOR SYSTEM_TIME AS OF o.order_time as r " +

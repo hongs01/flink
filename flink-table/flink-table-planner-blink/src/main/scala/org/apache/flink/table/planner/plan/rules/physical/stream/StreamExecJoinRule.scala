@@ -62,7 +62,7 @@ class StreamExecJoinRule
     // this rule shouldn't match temporal table join
     if (right.isInstanceOf[FlinkLogicalSnapshot] ||
       LegacyTemporalJoinUtil.containsTemporalJoinCondition(join.getCondition)
-      || TemporalJoinUtil.isTemporalJoin(join)) {
+      || TemporalJoinUtil.containsTemporalJoinCondition(join.getCondition)) {
       return false
     }
 

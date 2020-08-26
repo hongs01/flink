@@ -163,9 +163,7 @@ object TemporalJoinUtil {
       makeRightJoinKeyCall(rexBuilder, rightJoinKeyExpression))
   }
 
-  def isTemporalJoin(join: FlinkLogicalJoin): Boolean = {
-    val joinRightInput = join.getRight
-    val condition = join.getCondition
+  def containsTemporalJoinCondition(condition: RexNode): Boolean = {
     var hasTemporalJoinCondition: Boolean = false
     condition.accept(new RexVisitorImpl[Void](true) {
       override def visitCall(call: RexCall): Void = {
@@ -177,7 +175,7 @@ object TemporalJoinUtil {
         }
       }
     })
-    hasTemporalJoinCondition || joinRightInput.isInstanceOf[FlinkLogicalSnapshot]
+    hasTemporalJoinCondition
   }
 
   def isRowTimeJoin(rexBuilder: RexBuilder, joinInfo: JoinInfo): Boolean = {

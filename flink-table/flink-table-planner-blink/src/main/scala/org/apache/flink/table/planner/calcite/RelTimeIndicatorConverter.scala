@@ -23,9 +23,8 @@ import org.apache.flink.table.planner.calcite.FlinkTypeFactory._
 import org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable
 import org.apache.flink.table.planner.plan.nodes.calcite._
 import org.apache.flink.table.planner.plan.schema.TimeIndicatorRelDataType
-import org.apache.flink.table.planner.plan.utils.LegacyTemporalJoinUtil
+import org.apache.flink.table.planner.plan.utils.{LegacyTemporalJoinUtil, TemporalJoinUtil}
 import org.apache.flink.table.types.logical.TimestampType
-
 import org.apache.calcite.rel.`type`.RelDataType
 import org.apache.calcite.rel.core._
 import org.apache.calcite.rel.logical._
@@ -34,7 +33,6 @@ import org.apache.calcite.rex._
 import org.apache.calcite.sql.`type`.SqlTypeName
 import org.apache.calcite.sql.fun.SqlStdOperatorTable
 import org.apache.calcite.sql.fun.SqlStdOperatorTable.FINAL
-
 import java.util.{Collections => JCollections}
 
 import scala.collection.JavaConversions._
@@ -235,7 +233,8 @@ class RelTimeIndicatorConverter(rexBuilder: RexBuilder) extends RelShuttle {
     val left = join.getLeft.accept(this)
     val right = join.getRight.accept(this)
 
-    if (LegacyTemporalJoinUtil.containsTemporalJoinCondition(join.getCondition)) {
+    if (LegacyTemporalJoinUtil.containsTemporalJoinCondition(join.getCondition) ||
+      TemporalJoinUtil.containsTemporalJoinCondition(join.getCondition)) {
       // temporal table function join
       val rewrittenTemporalJoin = join.copy(join.getTraitSet, List(left, right))
 
