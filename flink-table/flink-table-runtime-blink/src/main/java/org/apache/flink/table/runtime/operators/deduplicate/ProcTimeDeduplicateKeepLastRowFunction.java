@@ -21,35 +21,45 @@ package org.apache.flink.table.runtime.operators.deduplicate;
 import org.apache.flink.api.common.state.StateTtlConfig;
 import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
-import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.runtime.typeutils.InternalTypeInfo;
 import org.apache.flink.util.Collector;
 
-import static org.apache.flink.table.runtime.operators.deduplicate.DeduplicateFunctionHelper.processFirstRow;
+import static org.apache.flink.table.runtime.operators.deduplicate.DeduplicateFunctionHelper.processLastRow;
 import static org.apache.flink.table.runtime.util.StateTtlConfigUtil.createTtlConfig;
 
 /**
- * This function is used to deduplicate on keys and keeps only first row.
+ * This function is used to deduplicate on keys and keeps only last row.
  */
-public class DeduplicateKeepFirstRowFunction
+public class ProcTimeDeduplicateKeepLastRowFunction
 		extends KeyedProcessFunction<RowData, RowData, RowData> {
 
-	private static final long serialVersionUID = 5865777137707602549L;
+	private static final long serialVersionUID = -291348892087180350L;
+	private final InternalTypeInfo<RowData> rowTypeInfo;
+	private final boolean generateUpdateBefore;
+	private final boolean generateInsert;
 
 	private final long minRetentionTime;
-	// state stores a boolean flag to indicate whether key appears before.
-	private ValueState<Boolean> state;
+	// state stores complete row.
+	private ValueState<RowData> state;
 
-	public DeduplicateKeepFirstRowFunction(long minRetentionTime) {
+	public ProcTimeDeduplicateKeepLastRowFunction(
+			long minRetentionTime,
+			InternalTypeInfo<RowData> rowTypeInfo,
+			boolean generateUpdateBefore,
+			boolean generateInsert) {
 		this.minRetentionTime = minRetentionTime;
+		this.rowTypeInfo = rowTypeInfo;
+		this.generateUpdateBefore = generateUpdateBefore;
+		this.generateInsert = generateInsert;
 	}
 
 	@Override
 	public void open(Configuration configure) throws Exception {
 		super.open(configure);
-		ValueStateDescriptor<Boolean> stateDesc = new ValueStateDescriptor<>("existsState", Types.BOOLEAN);
+		ValueStateDescriptor<RowData> stateDesc = new ValueStateDescriptor<>("preRowState", rowTypeInfo);
 		StateTtlConfig ttlConfig = createTtlConfig(minRetentionTime);
 		if (ttlConfig.isEnabled()) {
 			stateDesc.enableTimeToLive(ttlConfig);
@@ -59,6 +69,7 @@ public class DeduplicateKeepFirstRowFunction
 
 	@Override
 	public void processElement(RowData input, Context ctx, Collector<RowData> out) throws Exception {
-		processFirstRow(input, state, out);
+		processLastRow(input, generateUpdateBefore, generateInsert, state, out);
 	}
+
 }

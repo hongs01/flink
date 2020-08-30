@@ -22,6 +22,7 @@ import java.lang.{Long => JLong}
 import java.time.LocalDateTime
 
 import org.apache.flink.streaming.api.TimeCharacteristic
+import org.apache.flink.table.api.config.ExecutionConfigOptions
 import org.apache.flink.table.planner.factories.TestValuesTableFactory
 import org.apache.flink.table.planner.runtime.utils.StreamingWithStateTestBase
 import org.apache.flink.table.planner.runtime.utils.StreamingWithStateTestBase.StateBackendMode
@@ -105,7 +106,7 @@ class TemporalJoinITCase(state: StateBackendMode)
       TestValuesTableFactory.changelogRow("+I", JLong.valueOf(4L), "Euro", JLong.valueOf(14L),
         LocalDateTime.parse("2020-08-16T00:02:00")),
       TestValuesTableFactory.changelogRow("+I", JLong.valueOf(5L), "US Dollar", JLong.valueOf(18L),
-        LocalDateTime.parse("2020-08-16T00:03:01")),
+        LocalDateTime.parse("2020-08-16T00:03:00")),
       TestValuesTableFactory.changelogRow("+I", JLong.valueOf(6L), "RMB", JLong.valueOf(40L),
         LocalDateTime.parse("2020-08-16T00:03:00")))
     val dataId3 = TestValuesTableFactory.registerData(orderData2)
@@ -183,7 +184,7 @@ class TemporalJoinITCase(state: StateBackendMode)
          |  currency STRING,
          |  rate  BIGINT,
          |  currency_time TIMESTAMP(3),
-         |  WATERMARK FOR currency_time AS currency_time
+         |  WATERMARK FOR currency_time AS currency_time - interval '10' SECOND
          |) WITH (
          |  'connector' = 'values',
          |  'data-id' = '$dataId5',
@@ -275,9 +276,15 @@ class TemporalJoinITCase(state: StateBackendMode)
   }
 
   @Test
-  def testEventTimeViewInnerJoin(): Unit = {
+  def testEventTimeViewTemporalJoin(): Unit = {
     env.setParallelism(1)
     env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
+    tEnv.getConfig.getConfiguration.setBoolean(
+      ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED, true)
+    tEnv.getConfig.getConfiguration.setString(
+      ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ALLOW_LATENCY, "1 s")
+    tEnv.getConfig.getConfiguration.setLong(
+      ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE, 5L)
 
     val insertSql = "INSERT INTO rowtime_sink " +
       "SELECT o.order_id, o.currency, o.amount, o.order_time, r.rate, r.currency_time " +
@@ -292,7 +299,37 @@ class TemporalJoinITCase(state: StateBackendMode)
       "+I(2,US Dollar,1,2020-08-15T00:02,102,2020-08-15T00:00)",
       "+I(3,RMB,40,2020-08-15T00:03,702,2020-08-15T00:00)",
       "+I(4,Euro,14,2020-08-16T00:02,118,2020-08-16T00:01)",
-      "+I(5,US Dollar,18,2020-08-16T00:03:01,106,2020-08-16T00:02)",
+      "+I(5,US Dollar,18,2020-08-16T00:03,106,2020-08-16T00:02)",
+      "+I(6,RMB,40,2020-08-16T00:03,702,2020-08-15T00:00)")
+    assertEquals(expected.sorted, rawResult.sorted)
+  }
+
+  @Test
+  def testMinibatchEventTimeViewTemporalJoin(): Unit = {
+    env.setParallelism(1)
+    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
+
+    tEnv.getConfig.getConfiguration.setBoolean(
+      ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED, true)
+    tEnv.getConfig.getConfiguration.setString(
+      ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ALLOW_LATENCY, "1 s")
+    tEnv.getConfig.getConfiguration.setLong(
+      ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE, 4L)
+
+    val insertSql = "INSERT INTO rowtime_sink " +
+      "SELECT o.order_id, o.currency, o.amount, o.order_time, r.rate, r.currency_time " +
+      " FROM orders_rowtime AS o JOIN " +
+      " versioned_currency_view " +
+      " FOR SYSTEM_TIME AS OF o.order_time as r " +
+      " ON o.currency = r.currency"
+    execInsertSqlAndWaitResult(insertSql)
+    val rawResult = TestValuesTableFactory.getRawResults("rowtime_sink")
+    val expected = List(
+      "+I(1,Euro,12,2020-08-15T00:01,114,2020-08-15T00:00)",
+      "+I(2,US Dollar,1,2020-08-15T00:02,102,2020-08-15T00:00)",
+      "+I(3,RMB,40,2020-08-15T00:03,702,2020-08-15T00:00)",
+      "+I(4,Euro,14,2020-08-16T00:02,118,2020-08-16T00:01)",
+      "+I(5,US Dollar,18,2020-08-16T00:03,106,2020-08-16T00:02)",
       "+I(6,RMB,40,2020-08-16T00:03,702,2020-08-15T00:00)")
     assertEquals(expected.sorted, rawResult.sorted)
   }

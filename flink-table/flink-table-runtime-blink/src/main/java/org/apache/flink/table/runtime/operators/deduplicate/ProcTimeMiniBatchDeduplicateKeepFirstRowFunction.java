@@ -21,53 +21,44 @@ package org.apache.flink.table.runtime.operators.deduplicate;
 import org.apache.flink.api.common.state.StateTtlConfig;
 import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
+import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.runtime.context.ExecutionContext;
 import org.apache.flink.table.runtime.operators.bundle.MapBundleFunction;
-import org.apache.flink.table.runtime.typeutils.InternalTypeInfo;
 import org.apache.flink.util.Collector;
 
 import javax.annotation.Nullable;
 
 import java.util.Map;
 
-import static org.apache.flink.table.runtime.operators.deduplicate.DeduplicateFunctionHelper.processLastRow;
+import static org.apache.flink.table.runtime.operators.deduplicate.DeduplicateFunctionHelper.processFirstRow;
 import static org.apache.flink.table.runtime.util.StateTtlConfigUtil.createTtlConfig;
 
 /**
- * This function is used to get the last row for every key partition in miniBatch mode.
+ * This function is used to get the first row for every key partition in miniBatch mode.
  */
-public class MiniBatchDeduplicateKeepLastRowFunction
+public class ProcTimeMiniBatchDeduplicateKeepFirstRowFunction
 		extends MapBundleFunction<RowData, RowData, RowData, RowData> {
 
-	private static final long serialVersionUID = -8981813609115029119L;
+	private static final long serialVersionUID = -7994602893547654994L;
 
-	private final InternalTypeInfo<RowData> rowTypeInfo;
-	private final boolean generateUpdateBefore;
-	private final boolean generateInsert;
 	private final TypeSerializer<RowData> typeSerializer;
 	private final long minRetentionTime;
-	// state stores complete row.
-	private ValueState<RowData> state;
+	// state stores a boolean flag to indicate whether key appears before.
+	private ValueState<Boolean> state;
 
-	public MiniBatchDeduplicateKeepLastRowFunction(
-			InternalTypeInfo<RowData> rowTypeInfo,
-			boolean generateUpdateBefore,
-			boolean generateInsert,
+	public ProcTimeMiniBatchDeduplicateKeepFirstRowFunction(
 			TypeSerializer<RowData> typeSerializer,
 			long minRetentionTime) {
 		this.minRetentionTime = minRetentionTime;
-		this.rowTypeInfo = rowTypeInfo;
-		this.generateUpdateBefore = generateUpdateBefore;
-		this.generateInsert = generateInsert;
 		this.typeSerializer = typeSerializer;
 	}
 
 	@Override
 	public void open(ExecutionContext ctx) throws Exception {
 		super.open(ctx);
-		ValueStateDescriptor<RowData> stateDesc = new ValueStateDescriptor<>("preRowState", rowTypeInfo);
+		ValueStateDescriptor<Boolean> stateDesc = new ValueStateDescriptor<>("existsState", Types.BOOLEAN);
 		StateTtlConfig ttlConfig = createTtlConfig(minRetentionTime);
 		if (ttlConfig.isEnabled()) {
 			stateDesc.enableTimeToLive(ttlConfig);
@@ -77,8 +68,13 @@ public class MiniBatchDeduplicateKeepLastRowFunction
 
 	@Override
 	public RowData addInput(@Nullable RowData value, RowData input) {
-		// always put the input into buffer
-		return typeSerializer.copy(input);
+		if (value == null) {
+			// put the input into buffer
+			return typeSerializer.copy(input);
+		} else {
+			// the input is not first row, ignore it
+			return value;
+		}
 	}
 
 	@Override
@@ -88,7 +84,7 @@ public class MiniBatchDeduplicateKeepLastRowFunction
 			RowData currentKey = entry.getKey();
 			RowData currentRow = entry.getValue();
 			ctx.setCurrentKey(currentKey);
-			processLastRow(currentRow, generateUpdateBefore, generateInsert, state, out);
+			processFirstRow(currentRow, state, out);
 		}
 	}
 }

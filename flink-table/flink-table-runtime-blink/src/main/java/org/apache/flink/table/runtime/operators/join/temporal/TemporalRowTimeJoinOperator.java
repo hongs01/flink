@@ -39,7 +39,6 @@ import org.apache.flink.table.runtime.typeutils.InternalTypeInfo;
 
 import java.io.IOException;
 import java.io.Serializable;
-import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
