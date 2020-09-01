@@ -88,8 +88,7 @@ class TemporalJoinITCase(state: StateBackendMode)
          |  currency_no,
          |  rate,
          |  proctime FROM
-         |      ( SELECT *, ROW_NUMBER() OVER (PARTITION BY currency, currency_no
-         |        ORDER BY proctime DESC) AS rowNum
+         |      (SELECT *, ROW_NUMBER() OVER (PARTITION BY currency, currency_no ORDER BY proctime DESC) AS rowNum
          |        FROM currency_proctime) T
          | WHERE rowNum = 1""".stripMargin)
   }
