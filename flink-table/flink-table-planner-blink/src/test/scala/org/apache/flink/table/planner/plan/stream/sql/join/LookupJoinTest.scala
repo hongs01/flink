@@ -65,9 +65,9 @@ class LookupJoinTest(legacyTableSource: Boolean, useComputedColumn: Boolean)
       TestTemporalTable.createTemporaryTable(util.tableEnv, "LookupTable")
     } else {
       val computedColumn = useComputedColumn match {
-				case true => ", `nominal_age` as `age` + 1"
-				case _ => ""
-			}
+        case true => ", `nominal_age` as `age` + 1"
+        case _ => ""
+      }
       util.addTable(
         s"""
           |CREATE TABLE LookupTable (
