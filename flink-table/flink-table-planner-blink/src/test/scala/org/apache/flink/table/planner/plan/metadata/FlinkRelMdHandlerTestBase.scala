@@ -634,6 +634,7 @@ class FlinkRelMdHandlerTestBase {
       streamPhysicalTraits,
       streamExchange1,
       Array(1),
+      isRowtime = false,
       keepLastRow = false
     )
 
@@ -662,6 +663,7 @@ class FlinkRelMdHandlerTestBase {
       streamPhysicalTraits,
       streamExchange2,
       Array(1, 2),
+      isRowtime = false,
       keepLastRow = true
     )
     val calcOfLastRow = new StreamExecCalc(

@@ -46,6 +46,14 @@ public final class RowDataUtil {
 		return kind == RowKind.UPDATE_BEFORE || kind == RowKind.DELETE;
 	}
 
+	/**
+	 * Returns true if the message is  {@link RowKind#DELETE}.
+	 */
+	public static boolean isDeleteMsg(RowData row) {
+		RowKind kind = row.getRowKind();
+		return kind == RowKind.DELETE;
+	}
+
 	public static GenericRowData toGenericRow(
 			RowData row,
 			LogicalType[] types) {

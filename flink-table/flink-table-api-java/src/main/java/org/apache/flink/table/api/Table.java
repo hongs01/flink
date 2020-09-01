@@ -168,7 +168,9 @@ public interface Table {
 	 *        It takes one single argument, the {@code timeAttribute}, for which it returns
 	 *        matching version of the {@link Table}, from which {@link TemporalTableFunction}
 	 *        was created.
+	 * @deprecated use temporal DDL to create a temporal table.
 	 */
+	@Deprecated
 	TemporalTableFunction createTemporalTableFunction(Expression timeAttribute, Expression primaryKey);
 
 	/**

@@ -36,6 +36,7 @@ import org.apache.flink.table.data.util.RowDataUtil;
 import org.apache.flink.table.runtime.generated.GeneratedJoinCondition;
 import org.apache.flink.table.runtime.generated.JoinCondition;
 import org.apache.flink.table.runtime.typeutils.InternalTypeInfo;
+import org.apache.flink.types.RowKind;
 
 import java.io.IOException;
 import java.io.Serializable;
@@ -68,7 +69,7 @@ import java.util.Optional;
  * value. Upon triggering it, we process all records with event times older then or equal to
  * currentWatermark.
  */
-public class TemporalRowTimeJoinOperator
+public class LegacyTemporalRowTimeJoinOperator
 	extends BaseTwoInputStreamOperatorWithStateRetention {
 
 	private static final long serialVersionUID = 6642514795175288193L;
@@ -85,10 +86,7 @@ public class TemporalRowTimeJoinOperator
 	private final int leftTimeAttribute;
 	private final int rightTimeAttribute;
 
-	/**
-	 * The comparator to get the ordered elements of right state.
-	 */
-	private final ChangelogOrderComparator rightChangelogOrderComparator;
+	private final RowtimeComparator rightRowtimeComparator;
 
 	/**
 	 * Incremental index generator for {@link #leftState}'s keys.
@@ -110,16 +108,17 @@ public class TemporalRowTimeJoinOperator
 	 * <p>TODO: having `rightState` as an OrderedMapState would allow us to avoid sorting cost
 	 * once per watermark
 	 */
-	private transient MapState<RowData, Long> rightState;
+	private transient MapState<Long, RowData> rightState;
 
-	private transient ValueState<Long> registeredEventTimer;
+	// Long for correct handling of default null
+	private transient ValueState<Long> registeredTimer;
 	private transient TimestampedCollector<RowData> collector;
 	private transient InternalTimerService<VoidNamespace> timerService;
 
 	private transient JoinCondition joinCondition;
 	private transient JoinedRowData outRow;
 
-	public TemporalRowTimeJoinOperator(
+	public LegacyTemporalRowTimeJoinOperator(
 			InternalTypeInfo<RowData> leftType,
 			InternalTypeInfo<RowData> rightType,
 			GeneratedJoinCondition generatedJoinCondition,
@@ -133,7 +132,7 @@ public class TemporalRowTimeJoinOperator
 		this.generatedJoinCondition = generatedJoinCondition;
 		this.leftTimeAttribute = leftTimeAttribute;
 		this.rightTimeAttribute = rightTimeAttribute;
-		this.rightChangelogOrderComparator = new ChangelogOrderComparator(rightTimeAttribute);
+		this.rightRowtimeComparator = new RowtimeComparator(rightTimeAttribute);
 	}
 
 	@Override
@@ -147,19 +146,24 @@ public class TemporalRowTimeJoinOperator
 		leftState = getRuntimeContext().getMapState(
 			new MapStateDescriptor<>(LEFT_STATE_NAME, Types.LONG, leftType));
 		rightState = getRuntimeContext().getMapState(
-			new MapStateDescriptor<>(RIGHT_STATE_NAME, rightType, Types.LONG));
-		registeredEventTimer = getRuntimeContext().getState(
+			new MapStateDescriptor<>(RIGHT_STATE_NAME, Types.LONG, rightType));
+		registeredTimer = getRuntimeContext().getState(
 			new ValueStateDescriptor<>(REGISTERED_TIMER_STATE_NAME, Types.LONG));
 
 		timerService = getInternalTimerService(
 			TIMERS_STATE_NAME, VoidNamespaceSerializer.INSTANCE, this);
 		collector = new TimestampedCollector<>(output);
 		outRow = new JoinedRowData();
+		// all the output records should be INSERT only,
+		// because current temporal join only supports INSERT only left stream
+		outRow.setRowKind(RowKind.INSERT);
 	}
 
 	@Override
 	public void processElement1(StreamRecord<RowData> element) throws Exception {
 		RowData row = element.getValue();
+		checkNotRetraction(row);
+
 		leftState.put(getNextLeftIndex(), row);
 		registerSmallestTimer(getLeftTime(row)); // Timer to emit and clean up the state
 
@@ -169,8 +173,10 @@ public class TemporalRowTimeJoinOperator
 	@Override
 	public void processElement2(StreamRecord<RowData> element) throws Exception {
 		RowData row = element.getValue();
+		checkNotRetraction(row);
+
 		long rowTime = getRightTime(row);
-		rightState.put(row, rowTime);
+		rightState.put(rowTime, row);
 		registerSmallestTimer(rowTime); // Timer to clean up the state
 
 		registerProcessingCleanupTimer();
@@ -178,9 +184,9 @@ public class TemporalRowTimeJoinOperator
 
 	@Override
 	public void onEventTime(InternalTimer<Object, VoidNamespace> timer) throws Exception {
-		registeredEventTimer.clear();
+		registeredTimer.clear();
 		long lastUnprocessedTime = emitResultAndCleanUpState(timerService.currentWatermark());
- 		if (lastUnprocessedTime < Long.MAX_VALUE) {
+		if (lastUnprocessedTime < Long.MAX_VALUE) {
 			registerTimer(lastUnprocessedTime);
 		}
 
@@ -205,8 +211,8 @@ public class TemporalRowTimeJoinOperator
 	 * @return a row time of the oldest unprocessed probe record or Long.MaxValue, if all records
 	 *         have been processed.
 	 */
-	private long emitResultAndCleanUpState(long currentWatermark) throws Exception {
-		List<RowData> rightRowsSorted = getRightRowSorted(rightChangelogOrderComparator);
+	private long emitResultAndCleanUpState(long timerTimestamp) throws Exception {
+		List<RowData> rightRowsSorted = getRightRowSorted(rightRowtimeComparator);
 		long lastUnprocessedTime = Long.MAX_VALUE;
 
 		Iterator<Map.Entry<Long, RowData>> leftIterator = leftState.entries().iterator();
@@ -215,11 +221,10 @@ public class TemporalRowTimeJoinOperator
 			RowData leftRow = entry.getValue();
 			long leftTime = getLeftTime(leftRow);
 
-			if (leftTime <= currentWatermark) {
+			if (leftTime <= timerTimestamp) {
 				Optional<RowData> rightRow = latestRightRowToJoin(rightRowsSorted, leftTime);
 				if (rightRow.isPresent()) {
 					if (joinCondition.apply(leftRow, rightRow.get())) {
-						outRow.setRowKind(leftRow.getRowKind());
 						outRow.replace(leftRow, rightRow.get());
 						collector.collect(outRow);
 					}
@@ -230,30 +235,30 @@ public class TemporalRowTimeJoinOperator
 			}
 		}
 
-		cleanupState(currentWatermark, rightRowsSorted);
+		cleanupState(timerTimestamp, rightRowsSorted);
 		return lastUnprocessedTime;
 	}
 
 	/**
 	 * Removes all right entries older then the watermark, except the latest one. For example with:
-	 * rightState = [(+I,1), (-U,2), (+U,4), (-U,7), (+U,7), (-D,9)]
+	 * rightState = [1, 5, 9]
 	 * and
 	 * watermark = 6
-	 * we can not remove "4" from rightState, because left elements with rowtime of 5 or 6 could
+	 * we can not remove "5" from rightState, because left elements with rowtime of 7 or 8 could
 	 * be joined with it later
 	 */
-	private void cleanupState(long currentWatermark, List<RowData> rightRowsSorted) throws Exception {
+	private void cleanupState(long timerTimestamp, List<RowData> rightRowsSorted) throws Exception {
 		int i = 0;
-		int indexToKeep = firstIndexToKeep(currentWatermark, rightRowsSorted);
+		int indexToKeep = firstIndexToKeep(timerTimestamp, rightRowsSorted);
+		RowData toKeepRowData = rightRowsSorted.get(indexToKeep);
 
-		// the latest data is delete means the correspond version has expired
-		if (indexToKeep >= 0 && RowDataUtil.isDeleteMsg(rightRowsSorted.get(indexToKeep))) {
-			indexToKeep += 1;
+		if (RowDataUtil.isRetractMsg(toKeepRowData)) {
+			
 		}
-		// clean old version data that behind current watermark
+
 		while (i < indexToKeep) {
-			RowData row = rightRowsSorted.get(i);
-			rightState.remove(row);
+			long rightTime = getRightTime(rightRowsSorted.get(i));
+			rightState.remove(rightTime);
 			i += 1;
 		}
 	}
@@ -291,18 +296,49 @@ public class TemporalRowTimeJoinOperator
 		return -1;
 	}
 
+	/**
+	 * Binary search {@code rightRowsSorted} to find the latest right row to join with {@code leftTime}.
+	 * Latest means a right row with largest time that is still smaller or equal to {@code leftTime}.
+	 *
+	 * @return found element or {@code Optional.empty} If such row was not found (either {@code rightRowsSorted}
+	 *         is empty or all {@code rightRowsSorted} are are newer).
+	 */
 	private Optional<RowData> latestRightRowToJoin(List<RowData> rightRowsSorted, long leftTime) {
-		int indexToKeep = firstIndexToKeep(leftTime, rightRowsSorted);
-		// the latest data is retract means the latest version has expired
-		if (indexToKeep < 0 || RowDataUtil.isDeleteMsg(rightRowsSorted.get(indexToKeep))) {
-			return Optional.empty();
+		return latestRightRowToJoin(rightRowsSorted, 0, rightRowsSorted.size() - 1, leftTime);
+	}
+
+	private Optional<RowData> latestRightRowToJoin(
+			List<RowData> rightRowsSorted,
+			int low,
+			int high,
+			long leftTime) {
+		if (low > high) {
+			// exact value not found, we are returning largest from the values smaller then leftTime
+			if (low - 1 < 0) {
+				return Optional.empty();
+			}
+			else {
+				return Optional.of(rightRowsSorted.get(low - 1));
+			}
 		} else {
-			return Optional.of(rightRowsSorted.get(indexToKeep));
+			int mid = (low + high) >>> 1;
+			RowData midRow = rightRowsSorted.get(mid);
+			long midTime = getRightTime(midRow);
+			int cmp = Long.compare(midTime, leftTime);
+			if (cmp < 0) {
+				return latestRightRowToJoin(rightRowsSorted, mid + 1, high, leftTime);
+			}
+			else if (cmp > 0) {
+				return latestRightRowToJoin(rightRowsSorted, low, mid - 1, leftTime);
+			}
+			else {
+				return Optional.of(midRow);
+			}
 		}
 	}
 
 	private void registerSmallestTimer(long timestamp) throws IOException {
-		Long currentRegisteredTimer = registeredEventTimer.value();
+		Long currentRegisteredTimer = registeredTimer.value();
 		if (currentRegisteredTimer == null) {
 			registerTimer(timestamp);
 		} else if (currentRegisteredTimer > timestamp) {
@@ -312,16 +348,16 @@ public class TemporalRowTimeJoinOperator
 	}
 
 	private void registerTimer(long timestamp) throws IOException {
-		registeredEventTimer.update(timestamp);
+		registeredTimer.update(timestamp);
 		timerService.registerEventTimeTimer(VoidNamespace.INSTANCE, timestamp);
 	}
 
-	private List<RowData> getRightRowSorted(ChangelogOrderComparator changelogOrderComparator) throws Exception {
+	private List<RowData> getRightRowSorted(RowtimeComparator rowtimeComparator) throws Exception {
 		List<RowData> rightRows = new ArrayList<>();
-		for (RowData row : rightState.keys()) {
+		for (RowData row : rightState.values()) {
 			rightRows.add(row);
 		}
-		rightRows.sort(changelogOrderComparator);
+		rightRows.sort(rowtimeComparator);
 		return rightRows;
 	}
 
@@ -342,16 +378,24 @@ public class TemporalRowTimeJoinOperator
 		return rightRow.getLong(rightTimeAttribute);
 	}
 
+	private void checkNotRetraction(RowData row) {
+		if (RowDataUtil.isRetractMsg(row)) {
+			String className = getClass().getSimpleName();
+			throw new IllegalStateException(
+				"Retractions are not supported by " + className +
+					". If this can happen it should be validated during planning!");
+		}
+	}
 
 	// ------------------------------------------------------------------------------------------
 
-	private static class ChangelogOrderComparator implements Comparator<RowData>, Serializable {
+	private static class RowtimeComparator implements Comparator<RowData>, Serializable {
 
 		private static final long serialVersionUID = 8160134014590716914L;
 
 		private final int timeAttribute;
 
-		private ChangelogOrderComparator(int timeAttribute) {
+		private RowtimeComparator(int timeAttribute) {
 			this.timeAttribute = timeAttribute;
 		}
 
@@ -359,13 +403,7 @@ public class TemporalRowTimeJoinOperator
 		public int compare(RowData o1, RowData o2) {
 			long o1Time = o1.getLong(timeAttribute);
 			long o2Time = o2.getLong(timeAttribute);
-			int timeCom = Long.compare(o1Time, o2Time);
-			if (timeCom != 0) {
-				return timeCom;
-			}
-			byte o1KindValue = o1.getRowKind().toByteValue();
-			byte o2KindValue = o2.getRowKind().toByteValue();
-			return Byte.compare(o1KindValue, o2KindValue);
+			return Long.compare(o1Time, o2Time);
 		}
 	}
 }
