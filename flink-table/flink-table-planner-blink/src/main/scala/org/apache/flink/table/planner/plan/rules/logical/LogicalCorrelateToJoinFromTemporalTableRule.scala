@@ -266,8 +266,8 @@ abstract class LogicalCorrelateToJoinFromGeneralTemporalTableRule(
     }
 
     val snapshotTimeInputRef = extractSnapshotTimeInputRef(leftInput, snapshot)
-      .getOrElse(throw new ValidationException("Temporal Table Join requires time attribute in the " +
-        s"left table, but no row time attribute found."))
+      .getOrElse(throw new ValidationException("Temporal Table Join requires time " +
+        "attribute in the left table, but no row time attribute found."))
 
     val rexBuilder = correlate.getCluster.getRexBuilder
     val temporalCondition = if(isRowTimeTemporalTableJoin(snapshot)) {
