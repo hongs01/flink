@@ -36,6 +36,13 @@ import org.apache.flink.table.runtime.typeutils.InternalTypeInfo;
 
 /**
  * The operator to temporal join a stream on processing time.
+ *
+ * <p>For temporal TableFunction join (LATERAL TemporalTableFunction(o.proctime)) and
+ * temporal table join (FOR SYSTEM_TIME AS OF), the Processing-time temporal join can
+ * reuse same operator implementation. The difference of them is the legacy temporal
+ * join only support single column in primary key and temporal join support arbitrary
+ * columns in primary key.
+ *
  */
 public class TemporalProcessTimeJoinOperator
 	extends BaseTwoInputStreamOperatorWithStateRetention {
