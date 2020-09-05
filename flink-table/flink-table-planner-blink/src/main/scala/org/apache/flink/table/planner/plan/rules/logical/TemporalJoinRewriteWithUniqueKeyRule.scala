@@ -20,9 +20,9 @@ package org.apache.flink.table.planner.plan.rules.logical
 
 import org.apache.calcite.plan.RelOptRule.{any, operand}
 import org.apache.calcite.plan.{RelOptRule, RelOptRuleCall}
-import org.apache.calcite.rel.RelNode
-import org.apache.calcite.rel.core.JoinRelType
-import org.apache.calcite.rex.{RexBuilder, RexCall, RexNode, RexShuttle}
+import org.apache.calcite.rel.`type`.RelDataType
+import org.apache.calcite.rel.core.{JoinInfo, JoinRelType}
+import org.apache.calcite.rex.{RexBuilder, RexCall, RexInputRef, RexNode, RexShuttle}
 
 import org.apache.flink.table.api.ValidationException
 import org.apache.flink.table.planner.plan.metadata.FlinkRelMetadataQuery
@@ -67,6 +67,9 @@ class TemporalJoinRewriteWithUniqueKeyRule extends RelOptRule(
     val snapshot = call.rel[FlinkLogicalSnapshot](2)
 
     val joinCondition = join.getCondition
+    val joinInfo = JoinInfo.of(leftInput, snapshot, joinCondition)
+    val leftFieldCnt = leftInput.getRowType.getFieldCount
+    val joinRowType = join.getRowType
 
     val newJoinCondition = joinCondition.accept(new RexShuttle {
       override def visitCall(call: RexCall): RexNode = {
@@ -78,12 +81,14 @@ class TemporalJoinRewriteWithUniqueKeyRule extends RelOptRule(
           val rightJoinKey = call.operands(3).asInstanceOf[RexCall].operands
 
           val rexBuilder = join.getCluster.getRexBuilder
-          val primaryKeyInputRefs = extractPrimaryKeyInputRefs(leftInput, snapshot, rexBuilder)
+          val primaryKeyInputRefs = extractPrimaryKeyInputRefs(leftFieldCnt, snapshot, rexBuilder)
           if (primaryKeyInputRefs.isEmpty) {
             throw new ValidationException("Event-Time Temporal Table Join requires both" +
               s" primary key and row time attribute in versioned table," +
               s" but no primary key found.")
           }
+          validatePrimaryKeyInVersionedTable(joinRowType, leftFieldCnt,
+            joinInfo, primaryKeyInputRefs.get)
           TemporalJoinUtil.makeRowTimeTemporalJoinConditionCall(rexBuilder, snapshotTimeInputRef,
             rightTimeInputRef, leftJoinKey, rightJoinKey, primaryKeyInputRefs.get)
         }
@@ -97,8 +102,40 @@ class TemporalJoinRewriteWithUniqueKeyRule extends RelOptRule(
     call.transformTo(rewriteJoin)
   }
 
+  private def validatePrimaryKeyInVersionedTable(
+      joinRowType: RelDataType,
+      leftFieldCnt: Int,
+      joinInfo: JoinInfo,
+      rightPrimaryKey: Seq[RexNode]): Unit  = {
+
+    val rightJoinKeyIndices = joinInfo.rightKeys
+      .map(index => index + leftFieldCnt)
+      .toArray
+
+    val rightPrimaryKeyIndices = rightPrimaryKey
+      .map(r => r.asInstanceOf[RexInputRef].getIndex)
+      .toArray
+
+    val joinKeyContainsPrimaryKey = rightPrimaryKeyIndices
+      .forall(key => rightJoinKeyIndices.contains(key))
+
+    if (!joinKeyContainsPrimaryKey) {
+      val joinKeyFieldNames = rightJoinKeyIndices.map(i => joinRowType.getFieldNames.get(i))
+        .toList
+        .mkString(",")
+
+      val primaryKeyFieldNames = rightPrimaryKeyIndices.map(i => joinRowType.getFieldNames.get(i))
+        .toList
+        .mkString(",")
+
+      throw new ValidationException(
+        s"Join key [$joinKeyFieldNames] must contains versioned table's " +
+          s"primary key [$primaryKeyFieldNames] in Event-time temporal table join")
+    }
+  }
+
   private def extractPrimaryKeyInputRefs(
-      leftInput: RelNode,
+      leftFieldCnt: Int,
       snapshot: FlinkLogicalSnapshot,
       rexBuilder: RexBuilder): Option[Seq[RexNode]] = {
     val rightFields = snapshot.getRowType.getFieldList
@@ -108,7 +145,6 @@ class TemporalJoinRewriteWithUniqueKeyRule extends RelOptRule(
     val fields = snapshot.getRowType.getFieldList
 
     if (uniqueKeys != null && uniqueKeys.size() > 0) {
-      val leftFieldCnt = leftInput.getRowType.getFieldCount
       uniqueKeys
         .filter(_.nonEmpty)
         .map(_.toArray

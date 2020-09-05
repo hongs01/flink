@@ -19,8 +19,9 @@ package org.apache.flink.table.planner.plan.stream.sql.join
 
 import org.apache.flink.table.api.ValidationException
 import org.apache.flink.table.planner.utils.{StreamTableTestUtil, TableTestBase}
+
 import org.junit.Assert.{assertTrue, fail}
-import org.junit.Test
+import org.junit.{Before, Test}
 
 /**
  * Test temporal join in stream mode.
@@ -29,77 +30,108 @@ class TemporalJoinTest extends TableTestBase {
 
   val util: StreamTableTestUtil = streamTestUtil()
 
-  util.addTable(
-    """
-      |CREATE TABLE Orders (
-      | o_amount INT,
-      | o_currency STRING,
-      | o_rowtime TIMESTAMP(3),
-      | o_proctime as PROCTIME(),
-      | WATERMARK FOR o_rowtime AS o_rowtime
-      |) WITH (
-      | 'connector' = 'COLLECTION',
-      | 'is-bounded' = 'false'
-      |)
+  @Before
+  def before(): Unit = {
+    util.addTable(
+      """
+        |CREATE TABLE Orders (
+        | o_amount INT,
+        | o_currency STRING,
+        | o_rowtime TIMESTAMP(3),
+        | o_proctime as PROCTIME(),
+        | WATERMARK FOR o_rowtime AS o_rowtime
+        |) WITH (
+        | 'connector' = 'COLLECTION',
+        | 'is-bounded' = 'false'
+        |)
       """.stripMargin)
-  util.addTable(
-    """
-      |CREATE TABLE RatesHistory (
-      | currency STRING,
-      | rate INT,
-      | rowtime TIMESTAMP(3),
-      | WATERMARK FOR rowtime AS rowtime
-      |) WITH (
-      | 'connector' = 'COLLECTION',
-      | 'is-bounded' = 'false'
-      |)
-      """.stripMargin)
-
-  util.addTable(
-    """
-      |CREATE TABLE RatesHistoryWithPK (
-      | currency STRING,
-      | rate INT,
-      | rowtime TIMESTAMP(3),
-      | WATERMARK FOR rowtime AS rowtime,
-      | PRIMARY KEY(currency) NOT ENFORCED
-      |) WITH (
-      | 'connector' = 'COLLECTION',
-      | 'is-bounded' = 'false'
-      |)
+    util.addTable(
+      """
+        |CREATE TABLE RatesHistory (
+        | currency STRING,
+        | rate INT,
+        | rowtime TIMESTAMP(3),
+        | WATERMARK FOR rowtime AS rowtime
+        |) WITH (
+        | 'connector' = 'COLLECTION',
+        | 'is-bounded' = 'false'
+        |)
       """.stripMargin)
 
-  util.addTable(
-    """
-      |CREATE TABLE RatesOnly (
-      | currency STRING,
-      | rate INT,
-      | proctime AS PROCTIME()
-      |) WITH (
-      | 'connector' = 'COLLECTION',
-      | 'is-bounded' = 'false'
-      |)
+    util.addTable(
+      """
+        |CREATE TABLE RatesHistoryWithPK (
+        | currency STRING,
+        | rate INT,
+        | rowtime TIMESTAMP(3),
+        | WATERMARK FOR rowtime AS rowtime,
+        | PRIMARY KEY(currency) NOT ENFORCED
+        |) WITH (
+        | 'connector' = 'COLLECTION',
+        | 'is-bounded' = 'false'
+        |)
       """.stripMargin)
 
-  util.addTable(
-    " CREATE VIEW DeduplicatedView as SELECT currency, rate, rowtime FROM " +
-      "  (SELECT *, " +
-      "          ROW_NUMBER() OVER (PARTITION BY currency ORDER BY rowtime DESC) AS rowNum " +
-      "   FROM RatesHistory" +
-      "  ) T " +
-      "  WHERE rowNum = 1")
+    util.addTable(
+      """
+        |CREATE TABLE RatesOnly (
+        | currency STRING,
+        | rate INT,
+        | proctime AS PROCTIME()
+        |) WITH (
+        | 'connector' = 'COLLECTION',
+        | 'is-bounded' = 'false'
+        |)
+      """.stripMargin)
 
-  util.addTable(
-    " CREATE VIEW latestView as SELECT T.currency, T.rate, T.proctime FROM " +
-      "  (SELECT *, " +
-      "          ROW_NUMBER() OVER (PARTITION BY currency ORDER BY proctime DESC) AS rowNum " +
-      "   FROM RatesOnly" +
-      "  ) T " +
-      "  WHERE T.rowNum = 1")
+    util.addTable(
+      " CREATE VIEW DeduplicatedView as SELECT currency, rate, rowtime FROM " +
+        "  (SELECT *, " +
+        "          ROW_NUMBER() OVER (PARTITION BY currency ORDER BY rowtime DESC) AS rowNum " +
+        "   FROM RatesHistory" +
+        "  ) T " +
+        "  WHERE rowNum = 1")
 
-  util.addTable("CREATE VIEW latest_rates AS SELECT currency, LAST_VALUE(rate) AS rate " +
-    "FROM RatesHistory " +
-    "GROUP BY currency ")
+    util.addTable(
+      " CREATE VIEW latestView as SELECT T.currency, T.rate, T.proctime FROM " +
+        "  (SELECT *, " +
+        "          ROW_NUMBER() OVER (PARTITION BY currency ORDER BY proctime DESC) AS rowNum " +
+        "   FROM RatesOnly" +
+        "  ) T " +
+        "  WHERE T.rowNum = 1")
+
+    util.addTable("CREATE VIEW latest_rates AS SELECT currency, LAST_VALUE(rate) AS rate " +
+      "FROM RatesHistory " +
+      "GROUP BY currency ")
+
+    util.addTable(
+      """
+        |CREATE TABLE Orders1 (
+        | o_amount INT,
+        | o_currency STRING,
+        | o_currency_no STRING,
+        | o_rowtime TIMESTAMP(3),
+        | WATERMARK FOR o_rowtime AS o_rowtime - INTERVAL '0.001' SECOND
+        |) WITH (
+        | 'connector' = 'COLLECTION',
+        | 'is-bounded' = 'false'
+        |)
+      """.stripMargin)
+    util.addTable(
+      """
+        |CREATE TABLE RatesWithMultiKey (
+        | currency STRING,
+        | currency_no STRING,
+        | rate INT,
+        | rowtime TIMESTAMP(3),
+        | PRIMARY KEY(currency, currency_no) NOT ENFORCED,
+        | WATERMARK FOR rowtime AS rowtime - INTERVAL '0.001' SECOND
+        |) WITH (
+        | 'connector' = 'COLLECTION',
+        | 'is-bounded' = 'false'
+        |)
+      """.stripMargin)
+  }
 
   @Test
   def testEventTimeTemporalJoin(): Unit = {
@@ -120,6 +152,17 @@ class TemporalJoinTest extends TableTestBase {
       "DeduplicatedView " +
       "FOR SYSTEM_TIME AS OF o.o_rowtime as r1 " +
       "on o.o_currency = r1.currency"
+
+    util.verifyPlan(sqlQuery)
+  }
+
+  @Test
+  def testEventTimeTemporalJoinWithMultiKeys(): Unit = {
+    val sqlQuery = "SELECT * " +
+      "FROM Orders1 AS o JOIN " +
+      "RatesWithMultiKey " +
+      "FOR SYSTEM_TIME AS OF o.o_rowtime as r1 " +
+      "on o.o_currency = r1.currency and o.o_currency = r1.currency_no"
 
     util.verifyPlan(sqlQuery)
   }
@@ -149,7 +192,7 @@ class TemporalJoinTest extends TableTestBase {
   }
 
   @Test
-  def testInvalidTemporalTablJoin(): Unit = {
+  def testInvalidTemporalTableJoin(): Unit = {
     util.addTable(
       """
         |CREATE TABLE leftTableWithoutTimeAttribute (
@@ -240,6 +283,18 @@ class TemporalJoinTest extends TableTestBase {
       sqlQuery4,
       s"Event-Time Temporal Table Join requires both primary key and row time attribute in " +
         s"versioned table, but no row time attribute found.",
+      classOf[ValidationException])
+
+    val sqlQuery5 = "SELECT * " +
+      "FROM Orders1 AS o JOIN " +
+      "RatesWithMultiKey " +
+      "FOR SYSTEM_TIME AS OF o.o_rowtime as r1 " +
+      "on o.o_currency = r1.currency"
+
+    expectExceptionThrown(
+      sqlQuery5,
+      s"Join key [currency] must contains versioned table's primary key [currency,currency_no]" +
+        s" in Event-time temporal table join",
       classOf[ValidationException])
   }
 

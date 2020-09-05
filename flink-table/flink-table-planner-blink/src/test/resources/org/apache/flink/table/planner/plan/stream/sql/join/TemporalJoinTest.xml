@@ -85,6 +85,35 @@ Calc(select=[*(o_amount, rate) AS rate])
 ]]>
     </Resource>
   </TestCase>
+  <TestCase name="testEventTimeTemporalJoinWithMultiKeys">
+    <Resource name="sql">
+      <![CDATA[SELECT * FROM Orders1 AS o JOIN RatesWithMultiKey FOR SYSTEM_TIME AS OF o.o_rowtime as r1 on o.o_currency = r1.currency and o.o_currency = r1.currency_no]]>
+    </Resource>
+    <Resource name="planBefore">
+      <![CDATA[
+LogicalProject(o_amount=[$0], o_currency=[$1], o_currency_no=[$2], o_rowtime=[$3], currency=[$4], currency_no=[$5], rate=[$6], rowtime=[$7])
++- LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{1, 3}])
+   :- LogicalWatermarkAssigner(rowtime=[o_rowtime], watermark=[-($3, 1:INTERVAL SECOND)])
+   :  +- LogicalTableScan(table=[[default_catalog, default_database, Orders1, source: [CollectionTableSource(o_amount, o_currency, o_currency_no, o_rowtime)]]])
+   +- LogicalFilter(condition=[AND(=($cor0.o_currency, $0), =($cor0.o_currency, $1))])
+      +- LogicalSnapshot(period=[$cor0.o_rowtime])
+         +- LogicalWatermarkAssigner(rowtime=[rowtime], watermark=[-($3, 1:INTERVAL SECOND)])
+            +- LogicalTableScan(table=[[default_catalog, default_database, RatesWithMultiKey, source: [CollectionTableSource(currency, currency_no, rate, rowtime)]]])
+]]>
+    </Resource>
+    <Resource name="planAfter">
+      <![CDATA[
+Calc(select=[o_amount, o_currency, o_currency_no, o_rowtime, currency, currency_no, rate, CAST(rowtime) AS rowtime])
++- TemporalJoin(joinType=[InnerJoin], where=[AND(=(o_currency, currency), =(o_currency, currency_no), __TEMPORAL_JOIN_CONDITION(o_rowtime, rowtime, __TEMPORAL_JOIN_LEFT_KEY(o_currency, o_currency), TEMPORAL_JOIN_RIGHT_KEY(currency, currency_no), __TEMPORAL_JOIN_CONDITION_PRIMARY_KEY(currency, currency_no)))], select=[o_amount, o_currency, o_currency_no, o_rowtime, currency, currency_no, rate, rowtime])
+   :- Exchange(distribution=[hash[o_currency, o_currency]])
+   :  +- WatermarkAssigner(rowtime=[o_rowtime], watermark=[-(o_rowtime, 1:INTERVAL SECOND)])
+   :     +- LegacyTableSourceScan(table=[[default_catalog, default_database, Orders1, source: [CollectionTableSource(o_amount, o_currency, o_currency_no, o_rowtime)]]], fields=[o_amount, o_currency, o_currency_no, o_rowtime])
+   +- Exchange(distribution=[hash[currency, currency_no]])
+      +- WatermarkAssigner(rowtime=[rowtime], watermark=[-(rowtime, 1:INTERVAL SECOND)])
+         +- LegacyTableSourceScan(table=[[default_catalog, default_database, RatesWithMultiKey, source: [CollectionTableSource(currency, currency_no, rate, rowtime)]]], fields=[currency, currency_no, rate, rowtime])
+]]>
+    </Resource>
+  </TestCase>
   <TestCase name="testProcTimeTemporalJoin">
     <Resource name="sql">
       <![CDATA[SELECT o_amount * rate as rate FROM Orders AS o JOIN latestView FOR SYSTEM_TIME AS OF o.o_proctime as r1 on o.o_currency = r1.currency]]>

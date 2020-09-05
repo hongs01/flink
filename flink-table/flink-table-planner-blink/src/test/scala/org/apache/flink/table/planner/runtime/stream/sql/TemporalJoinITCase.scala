@@ -19,15 +19,19 @@
 package org.apache.flink.table.planner.runtime.stream.sql
 
 import java.lang.{Long => JLong}
+import java.time.LocalDateTime
 
 import org.apache.flink.streaming.api.TimeCharacteristic
 import org.apache.flink.table.planner.factories.TestValuesTableFactory
 import org.apache.flink.table.planner.runtime.utils.StreamingWithStateTestBase.StateBackendMode
 import org.apache.flink.table.planner.runtime.utils.StreamingWithStateTestBase
 
+import org.junit.Assert.assertEquals
 import org.junit._
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
+
+import scala.collection.JavaConversions._
 
 @RunWith(classOf[Parameterized])
 class TemporalJoinITCase(state: StateBackendMode)
@@ -35,22 +39,25 @@ class TemporalJoinITCase(state: StateBackendMode)
 
   @Before
   def prepare(): Unit = {
+
+    env.setParallelism(4)
+
     // for Processing-Time temporal table join
     val orderData1 = List(
-      TestValuesTableFactory.changelogRow("+I", toJLong(1), "Euro", "no1", toJLong(12)),
-      TestValuesTableFactory.changelogRow("+I", toJLong(2), "US Dollar", "no1", toJLong(14)),
-      TestValuesTableFactory.changelogRow("+I", toJLong(3), "US Dollar", "no2", toJLong(18)),
-      TestValuesTableFactory.changelogRow("+I", toJLong(4), "RMB", "no1", toJLong(40)),
-      TestValuesTableFactory.changelogRow("+U", toJLong(4), "RMB", "no1", toJLong(40)))
+      TestValuesTableFactory.changelogRow("+I", toLong(1), "Euro", "no1", toLong(12)),
+      TestValuesTableFactory.changelogRow("+I", toLong(2), "US Dollar", "no1", toLong(14)),
+      TestValuesTableFactory.changelogRow("+I", toLong(3), "US Dollar", "no2", toLong(18)),
+      TestValuesTableFactory.changelogRow("+I", toLong(4), "RMB", "no1", toLong(40)),
+      TestValuesTableFactory.changelogRow("+U", toLong(4), "RMB", "no1", toLong(40)))
     val dataId1 = TestValuesTableFactory.registerData(orderData1)
 
     val currencyData1 = List(
-      TestValuesTableFactory.changelogRow("+I", "Euro", "no1", toJLong(114)),
-      TestValuesTableFactory.changelogRow("+I", "US Dollar", "no1", toJLong(102)),
-      TestValuesTableFactory.changelogRow("+I", "Yen", "no1", toJLong(1)),
-      TestValuesTableFactory.changelogRow("+I", "RMB", "no1", toJLong(702)),
-      TestValuesTableFactory.changelogRow("+I", "Euro", "no1", toJLong(118)),
-      TestValuesTableFactory.changelogRow("+I", "US Dollar", "no2", toJLong(106)))
+      TestValuesTableFactory.changelogRow("+I", "Euro", "no1", toLong(114)),
+      TestValuesTableFactory.changelogRow("+I", "US Dollar", "no1", toLong(102)),
+      TestValuesTableFactory.changelogRow("+I", "Yen", "no1", toLong(1)),
+      TestValuesTableFactory.changelogRow("+I", "RMB", "no1", toLong(702)),
+      TestValuesTableFactory.changelogRow("+I", "Euro", "no1", toLong(118)),
+      TestValuesTableFactory.changelogRow("+I", "US Dollar", "no2", toLong(106)))
     val dataId2 = TestValuesTableFactory.registerData(currencyData1)
 
     tEnv.executeSql(
@@ -88,9 +95,94 @@ class TemporalJoinITCase(state: StateBackendMode)
          |  currency_no,
          |  rate,
          |  proctime FROM
-         |      (SELECT *, ROW_NUMBER() OVER (PARTITION BY currency, currency_no ORDER BY proctime DESC) AS rowNum
-         |        FROM currency_proctime) T
+         |    ( SELECT *, ROW_NUMBER() OVER (PARTITION BY currency, currency_no
+         |      ORDER BY proctime DESC) AS rowNum
+         |       FROM currency_proctime) T
          | WHERE rowNum = 1""".stripMargin)
+
+    // for Event-Time temporal table join
+    val orderData2 = List(
+      TestValuesTableFactory.changelogRow("+I", toLong(1), "Euro", "no1", toLong(12),
+        toDateTime("2020-08-15T00:01:00")),
+      TestValuesTableFactory.changelogRow("+I", toLong(2), "US Dollar", "no1", toLong(1),
+        toDateTime("2020-08-15T00:02:00")),
+      TestValuesTableFactory.changelogRow("+I", toLong(3), "RMB", "no1", toLong(40),
+        toDateTime("2020-08-15T00:03:00")),
+      TestValuesTableFactory.changelogRow("+I", toLong(4), "Euro", "no1", toLong(14),
+        toDateTime("2020-08-16T00:02:00")),
+      TestValuesTableFactory.changelogRow("+U", toLong(5), "US Dollar", "no1", toLong(18),
+        toDateTime("2020-08-16T00:03:00")),
+      TestValuesTableFactory.changelogRow("+I", toLong(6), "RMB", "no1", toLong(40),
+        toDateTime("2020-08-16T00:03:00")),
+      TestValuesTableFactory.changelogRow("-D", toLong(6), "RMB", "no1", toLong(40),
+        toDateTime("2020-08-16T00:03:00")))
+    val dataId3 = TestValuesTableFactory.registerData(orderData2)
+
+    val currencyData2 = List(
+      TestValuesTableFactory.changelogRow("+I", "Euro", "no1", toLong(114),
+        toDateTime("2020-08-15T00:00:00")),
+      TestValuesTableFactory.changelogRow("+I", "US Dollar", "no1", toLong(102),
+        toDateTime("2020-08-15T00:00:00")),
+      TestValuesTableFactory.changelogRow("+I", "Yen", "no1", toLong(1),
+        toDateTime("2020-08-15T00:00:00")),
+      TestValuesTableFactory.changelogRow("+I", "RMB", "no1", toLong(702),
+        toDateTime("2020-08-15T00:00:00")),
+      TestValuesTableFactory.changelogRow("-U", "Euro", "no1", toLong(114),
+        toDateTime("2020-08-16T00:01:00")),
+      TestValuesTableFactory.changelogRow("+U", "Euro",  "no1", toLong(118),
+        toDateTime("2020-08-16T00:01:00")),
+      TestValuesTableFactory.changelogRow("-U", "US Dollar", "no1", toLong(102),
+        toDateTime("2020-08-16T00:02:00")),
+      TestValuesTableFactory.changelogRow("+U", "US Dollar",  "no1", toLong(106),
+        toDateTime("2020-08-16T00:02:00")),
+      TestValuesTableFactory.changelogRow("-D","RMB", "no1", toLong(708),
+        toDateTime("2020-08-16T00:02:00")))
+    val dataId4 = TestValuesTableFactory.registerData(currencyData2)
+
+    tEnv.executeSql(
+      s"""
+         |CREATE TABLE orders_rowtime (
+         |  order_id BIGINT,
+         |  currency STRING,
+         |  currency_no STRING,
+         |  amount BIGINT,
+         |  order_time TIMESTAMP(3),
+         |  WATERMARK FOR order_time AS order_time
+         |) WITH (
+         |  'connector' = 'values',
+         |  'data-id' = '$dataId3'
+         |)
+         |""".stripMargin)
+
+    tEnv.executeSql(
+      s"""
+         |CREATE TABLE versioned_currency_with_single_key (
+         |  currency STRING,
+         |  currency_no STRING,
+         |  rate  BIGINT,
+         |  currency_time TIMESTAMP(3),
+         |  WATERMARK FOR currency_time AS currency_time - interval '10' SECOND,
+         |  PRIMARY KEY(currency) NOT ENFORCED
+         |) WITH (
+         |  'connector' = 'values',
+         |  'data-id' = '$dataId4'
+         |)
+         |""".stripMargin)
+
+    tEnv.executeSql(
+      s"""
+         |CREATE TABLE versioned_currency_with_multi_key (
+         |  currency STRING,
+         |  currency_no STRING,
+         |  rate  BIGINT,
+         |  currency_time TIMESTAMP(3),
+         |  WATERMARK FOR currency_time AS currency_time - interval '10' SECOND,
+         |  PRIMARY KEY(currency, currency_no) NOT ENFORCED
+         |) WITH (
+         |  'connector' = 'values',
+         |  'data-id' = '$dataId4'
+         |)
+         |""".stripMargin)
   }
 
   /**
@@ -100,7 +192,6 @@ class TemporalJoinITCase(state: StateBackendMode)
    */
   @Test
   def testProcessTimeTemoralJoin(): Unit = {
-    env.setParallelism(1)
     env.setStreamTimeCharacteristic(TimeCharacteristic.ProcessingTime)
 
     createSinkTable("proctime_sink1")
@@ -114,7 +205,6 @@ class TemporalJoinITCase(state: StateBackendMode)
 
   @Test
   def testProcessTimeTemoralJoinWithView(): Unit = {
-    env.setParallelism(1)
     env.setStreamTimeCharacteristic(TimeCharacteristic.ProcessingTime)
 
     createSinkTable("proctime_sink2")
@@ -128,8 +218,7 @@ class TemporalJoinITCase(state: StateBackendMode)
   }
 
   @Test
-  def testMultiTemporalJoin(): Unit = {
-    env.setParallelism(1)
+  def testProcessTimeMultiTemporalJoin(): Unit = {
     env.setStreamTimeCharacteristic(TimeCharacteristic.ProcessingTime)
 
     createSinkTable("proctime_sink3")
@@ -143,6 +232,70 @@ class TemporalJoinITCase(state: StateBackendMode)
       " FOR SYSTEM_TIME AS OF o.proctime as r1" +
       " ON o.currency = r1.currency and o.currency_no = r1.currency_no"
     execInsertSqlAndWaitResult(insertSql)
+  }
+
+  @Test
+  def testEventTimeTemporalJoinWithSingleKey(): Unit = {
+    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
+
+    createSinkTable("rowtime_sink1")
+    val insertSql = "INSERT INTO rowtime_sink1 " +
+      "SELECT o.order_id, o.currency, o.amount, o.order_time, r.rate, r.currency_time " +
+      " FROM orders_rowtime AS o JOIN " +
+      " versioned_currency_with_single_key " +
+      " FOR SYSTEM_TIME AS OF o.order_time as r " +
+      " ON o.currency = r.currency"
+    execInsertSqlAndWaitResult(insertSql)
+    val rawResult = TestValuesTableFactory.getRawResults("rowtime_sink1")
+    val expected = List(
+      "+I(1,Euro,12,2020-08-15T00:01,114,2020-08-15T00:00)",
+      "+I(2,US Dollar,1,2020-08-15T00:02,102,2020-08-15T00:00)",
+      "+I(3,RMB,40,2020-08-15T00:03,702,2020-08-15T00:00)",
+      "+I(4,Euro,14,2020-08-16T00:02,118,2020-08-16T00:01)",
+      "+U(5,US Dollar,18,2020-08-16T00:03,106,2020-08-16T00:02)")
+    assertEquals(expected.sorted, rawResult.sorted)
+  }
+
+  @Test
+  def testEventTimeTemporalJoinWithMultiKeys(): Unit = {
+    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
+
+    createSinkTable("rowtime_sink2")
+    val insertSql = "INSERT INTO rowtime_sink2 " +
+      "SELECT o.order_id, o.currency, o.amount, o.order_time, r.rate, r.currency_time " +
+      " FROM orders_rowtime AS o JOIN " +
+      " versioned_currency_with_multi_key " +
+      " FOR SYSTEM_TIME AS OF o.order_time as r " +
+      " ON o.currency = r.currency and o.currency_no = r.currency_no"
+    execInsertSqlAndWaitResult(insertSql)
+    val rawResult = TestValuesTableFactory.getRawResults("rowtime_sink2")
+    val expected = List(
+      "+I(1,Euro,12,2020-08-15T00:01,114,2020-08-15T00:00)",
+      "+I(2,US Dollar,1,2020-08-15T00:02,102,2020-08-15T00:00)",
+      "+I(3,RMB,40,2020-08-15T00:03,702,2020-08-15T00:00)",
+      "+I(4,Euro,14,2020-08-16T00:02,118,2020-08-16T00:01)",
+      "+U(5,US Dollar,18,2020-08-16T00:03,106,2020-08-16T00:02)")
+    assertEquals(expected.sorted, rawResult.sorted)
+  }
+
+  @Test
+  def testEventTimeTemporalJoinWithNonEqualCondition(): Unit = {
+    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
+
+    createSinkTable("rowtime_sink2")
+    val insertSql = "INSERT INTO rowtime_sink2 " +
+      "SELECT o.order_id, o.currency, o.amount, o.order_time, r.rate, r.currency_time " +
+      " FROM orders_rowtime AS o JOIN " +
+      " versioned_currency_with_multi_key " +
+      " FOR SYSTEM_TIME AS OF o.order_time as r " +
+      " ON o.currency = r.currency and o.currency_no = r.currency_no " +
+      " and o.order_id < 5 and r.rate > 114"
+    execInsertSqlAndWaitResult(insertSql)
+    val rawResult = TestValuesTableFactory.getRawResults("rowtime_sink2")
+    val expected = List(
+      "+I(3,RMB,40,2020-08-15T00:03,702,2020-08-15T00:00)",
+      "+I(4,Euro,14,2020-08-16T00:02,118,2020-08-16T00:01)")
+    assertEquals(expected.sorted, rawResult.sorted)
   }
 
   private def createSinkTable(tableName: String): Unit = {
@@ -163,7 +316,11 @@ class TemporalJoinITCase(state: StateBackendMode)
         |""".stripMargin)
   }
 
-  private def toJLong(int: Int): JLong = {
+  private def toLong(int: Int): JLong = {
     JLong.valueOf(int)
+  }
+
+  private def toDateTime(dateStr: String): LocalDateTime = {
+    LocalDateTime.parse(dateStr)
   }
 }

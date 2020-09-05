@@ -345,16 +345,6 @@ object StreamExecTemporalJoinToCoProcessTranslator {
     inputReferenceVisitor.getFields.head
   }
 
-  private def extractInputRefs(rexNode: RexNode, textualRepresentation: String): Array[Int] = {
-    val inputReferenceVisitor = new InputRefVisitor
-    rexNode.accept(inputReferenceVisitor)
-    checkState(
-      inputReferenceVisitor.getFields.length == 1,
-      "Failed to find input reference in [%s]",
-      textualRepresentation)
-    inputReferenceVisitor.getFields
-  }
-
   private class TemporalJoinConditionExtractor(
     textualRepresentation: String,
     rightKeysStartingOffset: Int,
@@ -392,23 +382,6 @@ object StreamExecTemporalJoinToCoProcessTranslator {
             s"defined in versioned table of Event-time temporal table join")
        }
 
-      val rightJoinKeyInputRefs = joinInfo.rightKeys
-        .map(index => index + rightKeysStartingOffset)
-        .toArray
-
-      val rightPrimaryKeyInputRefs = extractInputRefs(
-        rightPrimaryKey,
-        textualRepresentation)
-
-      val primaryKeyContainedInJoinKey = rightPrimaryKeyInputRefs.zipWithIndex
-        .map(r => (r._1, rightJoinKeyInputRefs(r._2)))
-        .forall(r => r._1 == r._2)
-      if (!primaryKeyContainedInJoinKey) {
-        throw new ValidationException(
-          s"Join key [$rightJoinKeyInputRefs] must be the same as " +
-            s"temporal table's primary key [$rightPrimaryKeyInputRefs] " +
-            s"in [$textualRepresentation]")
-      }
       rightPrimaryKey.asInstanceOf[RexCall].getOperands
         .asScala.toArray
      }
