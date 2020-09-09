@@ -27,13 +27,13 @@ import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.util.Collector;
 
-import static org.apache.flink.table.runtime.operators.deduplicate.DeduplicateFunctionHelper.processFirstRow;
+import static org.apache.flink.table.runtime.operators.deduplicate.DeduplicateFunctionHelper.processFirstRowOnProcTime;
 import static org.apache.flink.table.runtime.util.StateTtlConfigUtil.createTtlConfig;
 
 /**
  * This function is used to deduplicate on keys and keeps only first row.
  */
-public class DeduplicateKeepFirstRowFunction
+public class ProcTimeDeduplicateKeepFirstRowFunction
 		extends KeyedProcessFunction<RowData, RowData, RowData> {
 
 	private static final long serialVersionUID = 5865777137707602549L;
@@ -42,7 +42,7 @@ public class DeduplicateKeepFirstRowFunction
 	// state stores a boolean flag to indicate whether key appears before.
 	private ValueState<Boolean> state;
 
-	public DeduplicateKeepFirstRowFunction(long minRetentionTime) {
+	public ProcTimeDeduplicateKeepFirstRowFunction(long minRetentionTime) {
 		this.minRetentionTime = minRetentionTime;
 	}
 
@@ -59,6 +59,6 @@ public class DeduplicateKeepFirstRowFunction
 
 	@Override
 	public void processElement(RowData input, Context ctx, Collector<RowData> out) throws Exception {
-		processFirstRow(input, state, out);
+		processFirstRowOnProcTime(input, state, out);
 	}
 }

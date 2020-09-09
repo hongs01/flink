@@ -31,12 +31,12 @@ import java.util.List;
 import static org.apache.flink.table.runtime.util.StreamRecordUtils.insertRecord;
 
 /**
- * Tests for {@link DeduplicateKeepFirstRowFunction}.
+ * Tests for {@link ProcTimeDeduplicateKeepFirstRowFunction}.
  */
-public class DeduplicateKeepFirstRowFunctionTest extends DeduplicateFunctionTestBase {
+public class ProcTimeProcTimeDeduplicateKeepFirstRowFunctionTest extends ProcTimeDeduplicateFunctionTestBase {
 
 	private OneInputStreamOperatorTestHarness<RowData, RowData> createTestHarness(
-			DeduplicateKeepFirstRowFunction func)
+			ProcTimeDeduplicateKeepFirstRowFunction func)
 			throws Exception {
 		KeyedProcessOperator<RowData, RowData, RowData> operator = new KeyedProcessOperator<>(func);
 		return new KeyedOneInputStreamOperatorTestHarness<>(operator, rowKeySelector, rowKeySelector.getProducedType());
@@ -44,7 +44,7 @@ public class DeduplicateKeepFirstRowFunctionTest extends DeduplicateFunctionTest
 
 	@Test
 	public void test() throws Exception {
-		DeduplicateKeepFirstRowFunction func = new DeduplicateKeepFirstRowFunction(minTime.toMilliseconds());
+		ProcTimeDeduplicateKeepFirstRowFunction func = new ProcTimeDeduplicateKeepFirstRowFunction(minTime.toMilliseconds());
 		OneInputStreamOperatorTestHarness<RowData, RowData> testHarness = createTestHarness(func);
 		testHarness.open();
 		testHarness.processElement(insertRecord("book", 1L, 12));
@@ -61,7 +61,7 @@ public class DeduplicateKeepFirstRowFunctionTest extends DeduplicateFunctionTest
 
 	@Test
 	public void testWithStateTtl() throws Exception {
-		DeduplicateKeepFirstRowFunction func = new DeduplicateKeepFirstRowFunction(minTime.toMilliseconds());
+		ProcTimeDeduplicateKeepFirstRowFunction func = new ProcTimeDeduplicateKeepFirstRowFunction(minTime.toMilliseconds());
 		OneInputStreamOperatorTestHarness<RowData, RowData> testHarness = createTestHarness(func);
 		testHarness.open();
 		testHarness.processElement(insertRecord("book", 1L, 12));

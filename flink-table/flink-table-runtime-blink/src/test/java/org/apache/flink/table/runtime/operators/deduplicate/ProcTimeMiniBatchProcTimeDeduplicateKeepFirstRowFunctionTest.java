@@ -36,14 +36,14 @@ import java.util.List;
 import static org.apache.flink.table.runtime.util.StreamRecordUtils.insertRecord;
 
 /**
- * Tests for {@link MiniBatchDeduplicateKeepFirstRowFunction}.
+ * Tests for {@link ProcTimeMiniBatchDeduplicateKeepFirstRowFunction}.
  */
-public class MiniBatchDeduplicateKeepFirstRowFunctionTest extends DeduplicateFunctionTestBase {
+public class ProcTimeMiniBatchProcTimeDeduplicateKeepFirstRowFunctionTest extends ProcTimeDeduplicateFunctionTestBase {
 
 	private TypeSerializer<RowData> typeSerializer = inputRowType.createSerializer(new ExecutionConfig());
 
 	private OneInputStreamOperatorTestHarness<RowData, RowData> createTestHarness(
-			MiniBatchDeduplicateKeepFirstRowFunction func)
+			ProcTimeMiniBatchDeduplicateKeepFirstRowFunction func)
 			throws Exception {
 		CountBundleTrigger<Tuple2<String, String>> trigger = new CountBundleTrigger<>(3);
 		KeyedMapBundleOperator op = new KeyedMapBundleOperator(func, trigger);
@@ -52,7 +52,7 @@ public class MiniBatchDeduplicateKeepFirstRowFunctionTest extends DeduplicateFun
 
 	@Test
 	public void testKeepFirstRowWithGenerateUpdateBefore() throws Exception {
-		MiniBatchDeduplicateKeepFirstRowFunction func = new MiniBatchDeduplicateKeepFirstRowFunction(typeSerializer, minTime.toMilliseconds());
+		ProcTimeMiniBatchDeduplicateKeepFirstRowFunction func = new ProcTimeMiniBatchDeduplicateKeepFirstRowFunction(typeSerializer, minTime.toMilliseconds());
 		OneInputStreamOperatorTestHarness<RowData, RowData> testHarness = createTestHarness(func);
 		testHarness.open();
 		testHarness.processElement(insertRecord("book", 1L, 12));
@@ -73,7 +73,7 @@ public class MiniBatchDeduplicateKeepFirstRowFunctionTest extends DeduplicateFun
 
 	@Test
 	public void testKeepFirstRowWithStateTtl() throws Exception {
-		MiniBatchDeduplicateKeepFirstRowFunction func = new MiniBatchDeduplicateKeepFirstRowFunction(typeSerializer, minTime.toMilliseconds());
+		ProcTimeMiniBatchDeduplicateKeepFirstRowFunction func = new ProcTimeMiniBatchDeduplicateKeepFirstRowFunction(typeSerializer, minTime.toMilliseconds());
 		OneInputStreamOperatorTestHarness<RowData, RowData> testHarness = createTestHarness(func);
 		testHarness.setup();
 		testHarness.open();

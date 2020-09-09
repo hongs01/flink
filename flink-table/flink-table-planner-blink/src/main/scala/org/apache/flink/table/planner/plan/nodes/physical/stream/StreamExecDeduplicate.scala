@@ -18,6 +18,13 @@
 
 package org.apache.flink.table.planner.plan.nodes.physical.stream
 
+import java.lang.{Boolean => JBoolean}
+import java.util
+
+import org.apache.calcite.plan.{RelOptCluster, RelTraitSet}
+import org.apache.calcite.rel.`type`.RelDataType
+import org.apache.calcite.rel.{RelNode, RelWriter, SingleRel}
+
 import org.apache.flink.annotation.Experimental
 import org.apache.flink.api.dag.Transformation
 import org.apache.flink.configuration.ConfigOption
@@ -26,19 +33,17 @@ import org.apache.flink.streaming.api.operators.KeyedProcessOperator
 import org.apache.flink.streaming.api.transformations.OneInputTransformation
 import org.apache.flink.table.api.config.ExecutionConfigOptions
 import org.apache.flink.table.data.RowData
+import org.apache.flink.table.planner.calcite.FlinkTypeFactory
 import org.apache.flink.table.planner.delegation.StreamPlanner
 import org.apache.flink.table.planner.plan.nodes.exec.{ExecNode, StreamExecNode}
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamExecDeduplicate.TABLE_EXEC_INSERT_AND_UPDATE_AFTER_SENSITIVE
-import org.apache.flink.table.planner.plan.utils.{AggregateUtil, ChangelogPlanUtils, KeySelectorUtil}
+import org.apache.flink.table.planner.plan.utils.{ChangelogPlanUtils, KeySelectorUtil}
 import org.apache.flink.table.runtime.operators.bundle.KeyedMapBundleOperator
-import org.apache.flink.table.runtime.operators.deduplicate.{DeduplicateKeepFirstRowFunction, DeduplicateKeepLastRowFunction, MiniBatchDeduplicateKeepFirstRowFunction, MiniBatchDeduplicateKeepLastRowFunction}
+import org.apache.flink.table.runtime.operators.bundle.trigger.CountBundleTrigger
+import org.apache.flink.table.runtime.operators.deduplicate.{ProcTimeDeduplicateKeepFirstRowFunction, ProcTimeDeduplicateKeepLastRowFunction, ProcTimeMiniBatchDeduplicateKeepFirstRowFunction, ProcTimeMiniBatchDeduplicateKeepLastRowFunction, RowTimeDeduplicateKeepFirstRowFunction, RowTimeDeduplicateKeepLastRowFunction, RowTimeMiniBatchDeduplicateKeepFirstRowFunction, RowTimeMiniBatchDeduplicateKeepLastRowFunction}
 import org.apache.flink.table.runtime.typeutils.InternalTypeInfo
-import org.apache.calcite.plan.{RelOptCluster, RelTraitSet}
-import org.apache.calcite.rel.`type`.RelDataType
-import org.apache.calcite.rel.{RelNode, RelWriter, SingleRel}
-
-import java.lang.{Boolean => JBoolean}
-import java.util
+import org.apache.flink.table.types.logical.LogicalType
+import org.apache.flink.util.Preconditions
 
 import scala.collection.JavaConversions._
 
@@ -54,6 +59,7 @@ class StreamExecDeduplicate(
     traitSet: RelTraitSet,
     inputRel: RelNode,
     uniqueKeys: Array[Int],
+    val isRowtime: Boolean,
     val keepLastRow: Boolean)
   extends SingleRel(cluster, traitSet, inputRel)
   with StreamPhysicalRel
@@ -71,16 +77,18 @@ class StreamExecDeduplicate(
       traitSet,
       inputs.get(0),
       uniqueKeys,
+      isRowtime,
       keepLastRow)
   }
 
   override def explainTerms(pw: RelWriter): RelWriter = {
     val fieldNames = getRowType.getFieldNames
+    val orderString = if (isRowtime) "ROWTIME" else "PROCTIME"
     val keep = if (keepLastRow) "LastRow" else "FirstRow"
     super.explainTerms(pw)
       .item("keep", keep)
       .item("key", uniqueKeys.map(fieldNames.get).mkString(", "))
-      .item("order", "PROCTIME")
+      .item("order", orderString)
   }
 
   //~ ExecNode methods -----------------------------------------------------------
@@ -102,6 +110,12 @@ class StreamExecDeduplicate(
       .asInstanceOf[Transformation[RowData]]
 
     val rowTypeInfo = inputTransform.getOutputType.asInstanceOf[InternalTypeInfo[RowData]]
+    val inputFieldTypes = rowTypeInfo.toRowFieldTypes
+    val keyFieldTypes = new Array[LogicalType](uniqueKeys.length)
+    for (i <- 0 until uniqueKeys.length) {
+      keyFieldTypes(i) = inputFieldTypes(uniqueKeys(i))
+    }
+
     val generateUpdateBefore = ChangelogPlanUtils.generateUpdateBefore(this)
     val tableConfig = planner.getTableConfig
     val generateInsert = tableConfig.getConfiguration
@@ -109,37 +123,96 @@ class StreamExecDeduplicate(
     val isMiniBatchEnabled = tableConfig.getConfiguration.getBoolean(
       ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED)
     val minRetentionTime = tableConfig.getMinIdleStateRetentionTime
-    val operator = if (isMiniBatchEnabled) {
-      val exeConfig = planner.getExecEnv.getConfig
-      val rowSerializer = rowTypeInfo.createSerializer(exeConfig)
+
+    val rowtimeField = input.getRowType.getFieldList
+      .filter(f => FlinkTypeFactory.isRowtimeIndicatorType(f.getType))
+    val rowtimeIndex = if (isRowtime) {
+      Preconditions.checkArgument(rowtimeField.nonEmpty)
+      rowtimeField.get(0).getIndex
+    } else {
+      -1
+    }
+
+    val miniBatchsize = if (isMiniBatchEnabled) {
+      val size = tableConfig.getConfiguration.getLong(
+        ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE)
+      Preconditions.checkArgument(size > 0)
+      size
+    } else {
+      -1L
+    }
+    val exeConfig = planner.getExecEnv.getConfig
+    val rowSerializer = rowTypeInfo.createSerializer(exeConfig)
+
+    val operator = if (isRowtime) {
+      if(isMiniBatchEnabled) {
+        val processFunction = if (keepLastRow) {
+          new RowTimeMiniBatchDeduplicateKeepLastRowFunction(
+            rowTypeInfo,
+            rowSerializer,
+            rowtimeIndex,
+            minRetentionTime,
+            generateUpdateBefore,
+            generateInsert)
+        } else {
+          new RowTimeMiniBatchDeduplicateKeepFirstRowFunction(
+            rowTypeInfo,
+            rowSerializer,
+            rowtimeIndex,
+            minRetentionTime,
+            generateUpdateBefore,
+            generateInsert)
+        }
+        val trigger = new CountBundleTrigger[RowData](miniBatchsize)
+        new KeyedMapBundleOperator(processFunction, trigger)
+      } else {
+        val processFunction = if (keepLastRow) {
+          new RowTimeDeduplicateKeepLastRowFunction(
+            rowTypeInfo,
+            rowSerializer,
+            rowtimeIndex,
+            minRetentionTime,
+            generateUpdateBefore,
+            generateInsert)
+        } else {
+          new RowTimeDeduplicateKeepFirstRowFunction(
+            rowTypeInfo,
+            rowSerializer,
+            rowtimeIndex,
+            minRetentionTime,
+            generateUpdateBefore,
+            generateInsert)
+        }
+        new KeyedProcessOperator[RowData, RowData, RowData](processFunction)
+      }
+    } else if (isMiniBatchEnabled) {
       val processFunction = if (keepLastRow) {
-        new MiniBatchDeduplicateKeepLastRowFunction(
+        new ProcTimeMiniBatchDeduplicateKeepLastRowFunction(
           rowTypeInfo,
           generateUpdateBefore,
           generateInsert,
           rowSerializer,
           minRetentionTime)
       } else {
-        new MiniBatchDeduplicateKeepFirstRowFunction(
+        new ProcTimeMiniBatchDeduplicateKeepFirstRowFunction(
           rowSerializer,
           minRetentionTime)
       }
-      val trigger = AggregateUtil.createMiniBatchTrigger(tableConfig)
-      new KeyedMapBundleOperator(
-        processFunction,
-        trigger)
+      val trigger = new CountBundleTrigger[RowData](miniBatchsize)
+      new KeyedMapBundleOperator(processFunction, trigger)
     } else {
       val processFunction = if (keepLastRow) {
-        new DeduplicateKeepLastRowFunction(
+        new ProcTimeDeduplicateKeepLastRowFunction(
           minRetentionTime,
           rowTypeInfo,
           generateUpdateBefore,
           generateInsert)
       } else {
-        new DeduplicateKeepFirstRowFunction(minRetentionTime)
+        new ProcTimeDeduplicateKeepFirstRowFunction(minRetentionTime)
       }
       new KeyedProcessOperator[RowData, RowData, RowData](processFunction)
     }
+
     val ret = new OneInputTransformation(
       inputTransform,
       getRelDetailedDescription,

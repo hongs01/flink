@@ -19,6 +19,7 @@
 package org.apache.flink.table.planner.runtime.stream.sql
 
 import org.apache.flink.api.scala._
+import org.apache.flink.streaming.api.functions.timestamps.AscendingTimestampExtractor
 import org.apache.flink.table.api._
 import org.apache.flink.table.api.bridge.scala._
 import org.apache.flink.table.planner.runtime.utils.StreamingWithMiniBatchTestBase.MiniBatchMode
@@ -31,9 +32,22 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
 
+import scala.collection.mutable
+
 @RunWith(classOf[Parameterized])
 class DeduplicateITCase(miniBatch: MiniBatchMode, mode: StateBackendMode)
   extends StreamingWithMiniBatchTestBase(miniBatch, mode) {
+
+  lazy val rowtimeTestData = new mutable.MutableList[(Int, Long, String)]
+  rowtimeTestData.+=((1, 1L, "Hi"))
+  rowtimeTestData.+=((1, 3L, "Hello"))
+  rowtimeTestData.+=((1, 2L, "Hello world"))
+  rowtimeTestData.+=((2, 3L, "I am fine."))
+  rowtimeTestData.+=((2, 6L, "Comment#1"))
+  rowtimeTestData.+=((3, 5L, "Comment#2"))
+  rowtimeTestData.+=((3, 4L, "Comment#2"))
+  rowtimeTestData.+=((4, 4L, "Comment#3"))
+
 
   @Test
   def testFirstRowOnProctime(): Unit = {
@@ -137,4 +151,61 @@ class DeduplicateITCase(miniBatch: MiniBatchMode, mode: StateBackendMode)
     assertEquals(expected.sorted, sink.getRetractResults.sorted)
   }
 
+  @Test
+  def testFirstRowOnRowtime(): Unit = {
+    val t = env.fromCollection(rowtimeTestData)
+      .assignTimestampsAndWatermarks(new RowtimeExtractor)
+      .toTable(tEnv, 'a, 'b, 'c, 'rowtime.rowtime())
+    tEnv.registerTable("T", t)
+
+    val sql =
+      """
+        |SELECT a, b, c
+        |FROM (
+        |  SELECT *,
+        |    ROW_NUMBER() OVER (PARTITION BY a ORDER BY rowtime) as rowNum
+        |  FROM T
+        |)
+        |WHERE rowNum = 1
+      """.stripMargin
+
+    val sink = new TestingRetractSink
+    tEnv.sqlQuery(sql).toRetractStream[Row].addSink(sink)
+    env.execute()
+
+    val expected = List("1,1,Hi", "2,3,I am fine.", "3,4,Comment#2",
+      "3,5,Comment#2", "4,4,Comment#3")
+    assertEquals(expected.sorted, sink.getRetractResults.sorted)
+  }
+
+  @Test
+  def testLastRowOnRowtime(): Unit = {
+    val t = env.fromCollection(rowtimeTestData)
+      .assignTimestampsAndWatermarks(new RowtimeExtractor)
+      .toTable(tEnv, 'a, 'b, 'c, 'rowtime.rowtime())
+    tEnv.registerTable("T", t)
+
+    val sql =
+      """
+        |SELECT a, b, c
+        |FROM (
+        |  SELECT *,
+        |    ROW_NUMBER() OVER (PARTITION BY b ORDER BY rowtime DESC) as rowNum
+        |  FROM T
+        |)
+        |WHERE rowNum = 1
+      """.stripMargin
+
+    val sink = new TestingRetractSink
+    tEnv.sqlQuery(sql).toRetractStream[Row].addSink(sink)
+    env.execute()
+
+    val expected = List("1,1,Hi", "1,2,Hello world", "2,3,I am fine.",
+      "2,6,Comment#1", "3,5,Comment#2", "4,4,Comment#3")
+    assertEquals(expected.sorted, sink.getRetractResults.sorted)
+  }
+}
+
+class RowtimeExtractor extends AscendingTimestampExtractor[(Int, Long, String)] {
+  override def extractAscendingTimestamp(element: (Int, Long, String)): Long = element._2
 }

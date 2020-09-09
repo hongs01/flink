@@ -22,10 +22,10 @@ import java.lang.{Long => JLong}
 import java.time.LocalDateTime
 
 import org.apache.flink.streaming.api.TimeCharacteristic
+import org.apache.flink.table.api.config.ExecutionConfigOptions
 import org.apache.flink.table.planner.factories.TestValuesTableFactory
 import org.apache.flink.table.planner.runtime.utils.StreamingWithStateTestBase.StateBackendMode
 import org.apache.flink.table.planner.runtime.utils.StreamingWithStateTestBase
-
 import org.junit.Assert.assertEquals
 import org.junit._
 import org.junit.runner.RunWith
@@ -183,6 +183,49 @@ class TemporalJoinITCase(state: StateBackendMode)
          |  'data-id' = '$dataId4'
          |)
          |""".stripMargin)
+
+    // for Event-Time temporal table join (with view)
+    val currencyData3 = List(
+      TestValuesTableFactory.changelogRow("+I", "Euro", toLong(114),
+        toDateTime("2020-08-15T00:00:00")),
+      TestValuesTableFactory.changelogRow("+I", "US Dollar", toLong(102),
+        toDateTime("2020-08-15T00:00:00")),
+      TestValuesTableFactory.changelogRow("+I", "Yen", toLong(1),
+        toDateTime("2020-08-15T00:00:00")),
+      TestValuesTableFactory.changelogRow("+I", "RMB", toLong(702),
+        toDateTime("2020-08-15T00:00:00")),
+      TestValuesTableFactory.changelogRow("+I", "Yen",  toLong(118),
+        toDateTime("2020-08-16T00:01:00")),
+      TestValuesTableFactory.changelogRow("+I", "Euro",  toLong(118),
+        toDateTime("2020-08-16T00:01:00")),
+      TestValuesTableFactory.changelogRow("+I", "US Dollar",  toLong(106),
+        toDateTime("2020-08-16T00:02:00")))
+    val dataId5 = TestValuesTableFactory.registerData(currencyData3)
+    // append-only table
+    tEnv.executeSql(
+      s"""
+         |CREATE TABLE currency_history (
+         |  currency STRING,
+         |  rate  BIGINT,
+         |  currency_time TIMESTAMP(3),
+         |  WATERMARK FOR currency_time AS currency_time - interval '0.001' SECOND
+         |) WITH (
+         |  'connector' = 'values',
+         |  'data-id' = '$dataId5',
+         |  'changelog-mode' = 'I')
+         |  """.stripMargin)
+
+    tEnv.executeSql(
+      s"""
+         |CREATE VIEW versioned_currency_view AS
+         |SELECT
+         |  currency,
+         |  rate,
+         |  currency_time FROM
+         |      (SELECT *, ROW_NUMBER() OVER (PARTITION BY currency ORDER BY currency_time DESC)
+         |       AS rowNum FROM currency_history) T
+         | WHERE rowNum = 1""".stripMargin)
+
   }
 
   /**
@@ -295,6 +338,70 @@ class TemporalJoinITCase(state: StateBackendMode)
     val expected = List(
       "+I(3,RMB,40,2020-08-15T00:03,702,2020-08-15T00:00)",
       "+I(4,Euro,14,2020-08-16T00:02,118,2020-08-16T00:01)")
+    assertEquals(expected.sorted, rawResult.sorted)
+  }
+
+  @Test
+  def testEventTimeViewTemporalJoin(): Unit = {
+    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
+    tEnv.getConfig.getConfiguration.setBoolean(
+      ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED, true)
+    tEnv.getConfig.getConfiguration.setString(
+      ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ALLOW_LATENCY, "1 s")
+    tEnv.getConfig.getConfiguration.setLong(
+      ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE, 5L)
+
+    createSinkTable("rowtime_sink3")
+
+    val insertSql = "INSERT INTO rowtime_sink3 " +
+      "SELECT o.order_id, o.currency, o.amount, o.order_time, r.rate, r.currency_time " +
+      " FROM orders_rowtime AS o JOIN " +
+      " versioned_currency_view " +
+      " FOR SYSTEM_TIME AS OF o.order_time as r " +
+      " ON o.currency = r.currency"
+    execInsertSqlAndWaitResult(insertSql)
+    val rawResult = TestValuesTableFactory.getRawResults("rowtime_sink3")
+    val expected = List(
+      "+I(1,Euro,12,2020-08-15T00:01,114,2020-08-15T00:00)",
+      "+I(2,US Dollar,1,2020-08-15T00:02,102,2020-08-15T00:00)",
+      "+I(3,RMB,40,2020-08-15T00:03,702,2020-08-15T00:00)",
+      "+I(4,Euro,14,2020-08-16T00:02,118,2020-08-16T00:01)",
+      "+U(5,US Dollar,18,2020-08-16T00:03,106,2020-08-16T00:02)",
+      //versioned_currency_view does not contain "-D(RMB,no1,708,2020-08-16T00:02:00)
+      "+I(6,RMB,40,2020-08-16T00:03,702,2020-08-15T00:00)",
+      "-D(6,RMB,40,2020-08-16T00:03,702,2020-08-15T00:00)")
+    assertEquals(expected.sorted, rawResult.sorted)
+  }
+
+  @Test
+  def testMiniBatchEventTimeViewTemporalJoin(): Unit = {
+    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
+
+    tEnv.getConfig.getConfiguration.setBoolean(
+      ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED, true)
+    tEnv.getConfig.getConfiguration.setString(
+      ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ALLOW_LATENCY, "1 s")
+    tEnv.getConfig.getConfiguration.setLong(
+      ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE, 4L)
+
+    createSinkTable("rowtime_sink4")
+    val insertSql = "INSERT INTO rowtime_sink4 " +
+      "SELECT o.order_id, o.currency, o.amount, o.order_time, r.rate, r.currency_time " +
+      " FROM orders_rowtime AS o JOIN " +
+      " versioned_currency_view " +
+      " FOR SYSTEM_TIME AS OF o.order_time as r " +
+      " ON o.currency = r.currency"
+    execInsertSqlAndWaitResult(insertSql)
+    val rawResult = TestValuesTableFactory.getRawResults("rowtime_sink4")
+    val expected = List(
+      "+I(1,Euro,12,2020-08-15T00:01,114,2020-08-15T00:00)",
+      "+I(2,US Dollar,1,2020-08-15T00:02,102,2020-08-15T00:00)",
+      "+I(3,RMB,40,2020-08-15T00:03,702,2020-08-15T00:00)",
+      "+I(4,Euro,14,2020-08-16T00:02,118,2020-08-16T00:01)",
+      "+U(5,US Dollar,18,2020-08-16T00:03,106,2020-08-16T00:02)",
+      //versioned_currency_view does not contain "-D(RMB,no1,708,2020-08-16T00:02:00)
+      "+I(6,RMB,40,2020-08-16T00:03,702,2020-08-15T00:00)",
+      "-D(6,RMB,40,2020-08-16T00:03,702,2020-08-15T00:00)")
     assertEquals(expected.sorted, rawResult.sorted)
   }
 

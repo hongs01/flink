@@ -32,13 +32,13 @@ import javax.annotation.Nullable;
 
 import java.util.Map;
 
-import static org.apache.flink.table.runtime.operators.deduplicate.DeduplicateFunctionHelper.processFirstRow;
+import static org.apache.flink.table.runtime.operators.deduplicate.DeduplicateFunctionHelper.processFirstRowOnProcTime;
 import static org.apache.flink.table.runtime.util.StateTtlConfigUtil.createTtlConfig;
 
 /**
  * This function is used to get the first row for every key partition in miniBatch mode.
  */
-public class MiniBatchDeduplicateKeepFirstRowFunction
+public class ProcTimeMiniBatchDeduplicateKeepFirstRowFunction
 		extends MapBundleFunction<RowData, RowData, RowData, RowData> {
 
 	private static final long serialVersionUID = -7994602893547654994L;
@@ -48,7 +48,7 @@ public class MiniBatchDeduplicateKeepFirstRowFunction
 	// state stores a boolean flag to indicate whether key appears before.
 	private ValueState<Boolean> state;
 
-	public MiniBatchDeduplicateKeepFirstRowFunction(
+	public ProcTimeMiniBatchDeduplicateKeepFirstRowFunction(
 			TypeSerializer<RowData> typeSerializer,
 			long minRetentionTime) {
 		this.minRetentionTime = minRetentionTime;
@@ -84,7 +84,7 @@ public class MiniBatchDeduplicateKeepFirstRowFunction
 			RowData currentKey = entry.getKey();
 			RowData currentRow = entry.getValue();
 			ctx.setCurrentKey(currentKey);
-			processFirstRow(currentRow, state, out);
+			processFirstRowOnProcTime(currentRow, state, out);
 		}
 	}
 }

@@ -243,25 +243,7 @@ class FlinkRelMdUniqueKeys private extends MetadataHandler[BuiltInMetadata.Uniqu
       ignoreNulls: Boolean): JSet[ImmutableBitSet] = {
     val inputUniqueKeys = mq.getUniqueKeys(rel.getInput, ignoreNulls)
     val rankFunColumnIndex = RankUtil.getRankNumberColumnIndex(rel).getOrElse(-1)
-    //TODO current deduplicate on row time is still a Rank,
-    // remove this after support deduplicate on row time
-    val canConvertToDeduplicate: Boolean = {
-      val rankRange = rel.rankRange
-      val isRowNumberType = rel.rankType == RankType.ROW_NUMBER
-      val isLimit1 = rankRange match {
-        case rankRange: ConstantRankRange =>
-          rankRange.getRankStart() == 1 && rankRange.getRankEnd() == 1
-        case _ => false
-      }
-      !rel.outputRankNumber && isRowNumberType && isLimit1
-    }
-
-    if (canConvertToDeduplicate) {
-      val retSet = new JHashSet[ImmutableBitSet]
-      retSet.add(rel.partitionKey)
-      retSet
-    }
-    else if (rankFunColumnIndex < 0) {
+    if (rankFunColumnIndex < 0) {
       inputUniqueKeys
     } else {
       val retSet = new JHashSet[ImmutableBitSet]
