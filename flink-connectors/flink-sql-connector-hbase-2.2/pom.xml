@@ -71,12 +71,12 @@ under the License.
 								<includes>
 									<include>org.apache.flink:flink-connector-hbase-2.2_${scala.binary.version}</include>
 									<include>org.apache.hbase:hbase-*</include>
-									<include>org.apache.zookeeper:zookeeper</include>
-									<include>org.apache.htrace:htrace-core</include>
-									<include>com.google.protobuf:protobuf-java</include>
-									<include>commons-codec:commons-codec</include>
 									<include>org.apache.commons:commons-crypto</include>
 									<include>org.apache.commons:commons-lang3</include>
+									<include>org.apache.zookeeper:zookeeper</include>
+									<include>org.apache.htrace:htrace-core4</include>
+									<include>com.google.protobuf:protobuf-java</include>
+									<include>commons-codec:commons-codec</include>
 									<include>io.netty:netty-all</include>
 								</includes>
 								<excludes>
@@ -85,7 +85,6 @@ under the License.
 									<exclude>org.apache.hbase:hbase-hadoop*-compat</exclude>
 									<exclude>org.apache.hbase:hbase-protocol-shaded</exclude>
 									<exclude>hbase.thirdparty:hbase-shaded-*</exclude>
-									<exclude>*.proto</exclude>
 								</excludes>
 							</artifactSet>
 							<filters>
@@ -100,6 +99,7 @@ under the License.
 										<exclude>properties.dtd</exclude>
 										<exclude>PropertyList-1.0.dtd</exclude>
 										<exclude>LICENSE.txt</exclude>
+										<exclude>*.proto</exclude>
 									</excludes>
 								</filter>
 							</filters>
@@ -116,10 +116,6 @@ under the License.
 								<relocation>
 									<pattern>com.google</pattern>
 									<shadedPattern>org.apache.flink.hbase.shaded.com.google</shadedPattern>
-								</relocation>
-								<relocation>
-									<pattern>com.yammer.metrics</pattern>
-									<shadedPattern>org.apache.flink.hbase.shaded.com.yammer.metrics</shadedPattern>
 								</relocation>
 								<relocation>
 									<pattern>org.apache.commons</pattern>
