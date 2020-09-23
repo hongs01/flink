@@ -69,6 +69,7 @@ under the License.
 							<shadeTestJar>false</shadeTestJar>
 							<artifactSet>
 								<includes>
+									<include>org.apache.flink:flink-connector-hbase-base_${scala.binary.version}</include>
 									<include>org.apache.flink:flink-connector-hbase-1.4_${scala.binary.version}</include>
 									<include>org.apache.hbase:hbase-*</include>
 									<include>org.apache.zookeeper:zookeeper</include>

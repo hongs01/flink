@@ -17,6 +17,7 @@ This project bundles the following dependencies under the Apache Software Licens
   - org.apache.hbase:hbase-hadoop-compat:jar:2.2.3
   - org.apache.hbase:hbase-hadoop2-compat:jar:2.2.3
   - org.apache.hbase:hbase-protocol:jar:2.2.3
+  - org.apache.hbase:hbase-protocol-shaded:2.2.3
   - org.apache.htrace:htrace-core4:jar:4.2.0-incubating
   - org.apache.zookeeper:zookeeper:pom:3.4.14
 
